@@ -52,8 +52,12 @@ export function startServer(config: Config, port: number, configPath?: string) {
   initMemory(dataDir);
   initAgentBus(config);
 
-  agentEvents.on("tool_call", (d: any) => logActivity("tool", d.agentId, `🔧 ${d.tool}(${JSON.stringify(d.args).slice(0, 80)})`));
+  agentEvents.on("tool_call", (d: any) => {
+    logActivity("tool", d.agentId, `🔧 ${d.tool}(${JSON.stringify(d.args).slice(0, 80)})`);
+    if (d.tool === "remember_about_user") logActivity("memory", d.agentId, `🧠 记忆写入: ${d.args?.key} = ${d.args?.value}`.slice(0, 120));
+  });
   agentEvents.on("tool_result", (d: any) => logActivity("tool_result", d.agentId, `✅ ${d.tool} → ${d.result.slice(0, 100)}`));
+  agentEvents.on("agent_created", (d: any) => logActivity("agent_created", d.id, `🧬 新分身体唤醒: ${d.name} [${d.role}]`));
 
   const onMessage = async (msg: GatewayMessage) => {
     logActivity("user_in", msg.gateway, `${msg.text.slice(0, 120)}`, msg.gateway);
@@ -169,10 +173,7 @@ export function startServer(config: Config, port: number, configPath?: string) {
     }
 
     if (url.startsWith("/api/memory/model") && method === "GET") {
-      const params = new URL(fullUrl, "http://localhost").searchParams;
-      const sessionId = params.get("sessionId") ?? "";
-      const key = sessionId ? `web:${sessionId}` : "";
-      const facts = key ? getUserFacts(key) : [];
+      const facts = getUserFacts();
 
       const categories = [
         { id: "basic", name: "基本画像", icon: "👤", keys: ["姓名","名字","年龄","性别","生日","城市","职业","公司","行业","工作"] },
@@ -208,11 +209,8 @@ export function startServer(config: Config, port: number, configPath?: string) {
     }
 
     if (url.startsWith("/api/bond") && method === "GET") {
-      const params = new URL(fullUrl, "http://localhost").searchParams;
-      const sessionId = params.get("sessionId") ?? "";
-      const key = sessionId ? `web:${sessionId}` : "";
-      const factCount = key ? getUserFactCount(key) : 0;
-      const facts = key ? getUserFacts(key) : [];
+      const factCount = getUserFactCount();
+      const facts = getUserFacts();
       let level: string, emoji: string;
       if (factCount === 0) { level = "初见"; emoji = "🫧"; }
       else if (factCount < 5) { level = "认识中"; emoji = "🪼"; }

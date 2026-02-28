@@ -90,24 +90,33 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .tag.tool{background:rgba(0,212,123,0.1);color:var(--green)}
 .tag.model{background:rgba(77,159,255,0.1);color:var(--blue)}
 
-/* Timeline */
-.timeline{flex:1;overflow-y:auto;padding:8px 16px;display:flex;flex-direction:column;gap:1px}
-.tl-row{display:flex;align-items:baseline;gap:8px;padding:4px 8px;border-radius:4px;font-size:12px;line-height:1.5;transition:background .1s}
+/* Timeline / Log */
+.timeline{flex:1;overflow-y:auto;padding:8px 12px;display:flex;flex-direction:column;gap:0}
+.tl-row{display:flex;align-items:center;gap:6px;padding:5px 8px;font-size:12px;line-height:1.5;transition:background .1s;border-radius:3px}
 .tl-row:hover{background:var(--surface2)}
-.tl-time{flex-shrink:0;width:90px;color:var(--text2);font-size:10px;font-family:"SF Mono",Menlo,monospace}
-.tl-src{flex-shrink:0;font-size:9px;padding:1px 6px;border-radius:3px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
-.tl-detail{color:var(--text);word-break:break-word;white-space:pre-wrap;flex:1;min-width:0}
+.tl-icon{flex-shrink:0;width:18px;text-align:center;font-size:12px}
+.tl-time{flex-shrink:0;width:82px;color:var(--text2);font-size:10px;font-family:"SF Mono",Menlo,monospace;opacity:.7}
+.tl-label{flex-shrink:0;width:32px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--text2)}
+.tl-src{flex-shrink:0;font-size:9px;padding:1px 5px;border-radius:3px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+.tl-src-web{background:rgba(124,108,240,.15);color:var(--accent)}
+.tl-src-lark{background:rgba(77,159,255,.15);color:var(--blue)}
+.tl-src-server{background:rgba(136,136,160,.12);color:var(--text2)}
+.tl-detail{color:var(--text);word-break:break-word;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+.tl-row:hover .tl-detail{white-space:pre-wrap;overflow:visible}
 .tl-user{border-left:3px solid var(--blue)}
-.tl-user .tl-detail{color:var(--blue)}
-.tl-user .tl-src{background:rgba(77,159,255,.15);color:var(--blue)}
+.tl-user .tl-label{color:var(--blue)}
+.tl-user .tl-detail{color:var(--blue);font-weight:500}
 .tl-agent{border-left:3px solid var(--green)}
-.tl-agent .tl-detail{color:var(--text)}
-.tl-agent .tl-src{background:rgba(0,212,123,.15);color:var(--green)}
-.tl-tool{border-left:3px solid var(--orange);opacity:.7}
+.tl-agent .tl-label{color:var(--green)}
+.tl-tool{border-left:3px solid var(--orange);opacity:.65}
 .tl-tool .tl-detail{color:var(--orange);font-size:11px}
-.tl-tool .tl-src{background:rgba(255,160,64,.1);color:var(--orange)}
-.tl-system{border-left:3px solid var(--text2);opacity:.6}
+.tl-tool .tl-label{color:var(--orange)}
+.tl-memory{border-left:3px solid var(--accent)}
+.tl-memory .tl-label{color:var(--accent)}
+.tl-memory .tl-detail{color:var(--accent)}
+.tl-system{border-left:3px solid var(--text2);opacity:.5}
 .tl-system .tl-detail{color:var(--text2);font-size:11px;font-style:italic}
+.tl-system .tl-label{color:var(--text2)}
 .empty-msg{color:var(--text2);padding:24px;text-align:center;font-style:italic}
 
 /* Welcome */
@@ -174,6 +183,14 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .toast.success{background:var(--green);color:#000}
 .toast.error{background:var(--red);color:#fff}
 .toast.info{background:var(--accent);color:#fff}
+
+/* Memory Update Toast (游戏化特效) */
+#memory-toast-container{position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:300;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.memory-toast{position:relative;padding:14px 28px;border-radius:12px;background:linear-gradient(135deg,rgba(124,108,240,.95),rgba(77,159,255,.9));color:#fff;font-size:13px;font-weight:500;letter-spacing:.3px;box-shadow:0 8px 32px rgba(124,108,240,.4),0 0 60px rgba(124,108,240,.15);opacity:0;transform:translateY(-20px) scale(.9);transition:all .5s cubic-bezier(.2,.8,.3,1);backdrop-filter:blur(8px);overflow:hidden}
+.memory-toast.mt-show{opacity:1;transform:translateY(0) scale(1)}
+.mt-glow{position:absolute;inset:-2px;border-radius:14px;background:linear-gradient(45deg,transparent,rgba(255,255,255,.2),transparent);animation:mt-shine 2s ease infinite}
+.mt-text{position:relative;z-index:1}
+@keyframes mt-shine{0%{opacity:0;transform:translateX(-100%)}50%{opacity:1}100%{opacity:0;transform:translateX(100%)}}
 
 ::-webkit-scrollbar{width:5px}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}

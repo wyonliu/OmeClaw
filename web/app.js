@@ -14,20 +14,19 @@ function formatMsg(text){
 }
 function timeFmt(t){return new Date(typeof t==="number"&&t<1e12?t*1000:t).toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false})}
 
-// ─── NAVIGATION ───
-$$(".nav-btn").forEach(b=>{b.addEventListener("click",()=>{
-  $$(".nav-btn").forEach(x=>x.classList.remove("active"));b.classList.add("active");
-  $$(".view").forEach(v=>v.classList.remove("active"));$(`#view-${b.dataset.view}`).classList.add("active");
-  if(b.dataset.view==="activity")loadActivity();
-  if(b.dataset.view==="status")loadStatus();
-  if(b.dataset.view==="agents")loadAgents();
-  if(b.dataset.view==="memory")loadMemory();
-})});
+// ─── NAVIGATION ─── 支持刷新后恢复当前页
 function switchView(name){
   $$(".nav-btn").forEach(x=>x.classList.remove("active"));
   $$(`.nav-btn[data-view="${name}"]`).forEach(x=>x.classList.add("active"));
   $$(".view").forEach(v=>v.classList.remove("active"));$(`#view-${name}`).classList.add("active");
+  localStorage.setItem("omeclaw_view",name);
+  if(name==="chat")loadChatHistory();
+  if(name==="activity")loadActivity();
+  if(name==="status")loadStatus();
+  if(name==="agents")loadAgents();
+  if(name==="memory")loadMemory();
 }
+$$(".nav-btn").forEach(b=>{b.addEventListener("click",()=>switchView(b.dataset.view))});
 
 // ─── AGENTS ───
 async function loadAgents(){
@@ -86,22 +85,29 @@ async function loadStatus(){
   }catch{setConn(false);}
 }
 
-// ─── ACTIVITY ── 统一时间线 ───
+// ─── ACTIVITY ── 系统日志 ───
+const LOG_META={
+  user_in:{icon:"📨",label:"用户",cls:"tl-user"},
+  agent_out:{icon:"🤖",label:"回复",cls:"tl-agent"},
+  tool:{icon:"🔧",label:"工具",cls:"tl-tool"},
+  tool_result:{icon:"✅",label:"结果",cls:"tl-tool"},
+  memory:{icon:"🧠",label:"记忆",cls:"tl-memory"},
+  agent_created:{icon:"🧬",label:"创建",cls:"tl-system"},
+  system:{icon:"⚙️",label:"系统",cls:"tl-system"},
+};
 async function loadActivity(){
   const el=$("#activity-log");
   try{
     const data=await(await fetch("/api/activity")).json();
     const items=data.timeline||[];
-    if(!items.length){el.innerHTML=`<p class="empty-msg">还没有任何动态</p>`;return;}
+    if(!items.length){el.innerHTML=`<p class="empty-msg">暂无日志</p>`;return;}
     let html="";
     for(const it of items){
       const t=timeFmt(it.time);
-      const src=it.source?`<span class="tl-src">${esc(it.source)}</span>`:"";
-      let cls="tl-system";
-      if(it.type==="user_in") cls="tl-user";
-      else if(it.type==="agent_out") cls="tl-agent";
-      else if(it.type==="tool"||it.type==="tool_result") cls="tl-tool";
-      html+=`<div class="tl-row ${cls}"><span class="tl-time">${t}</span>${src}<span class="tl-detail">${esc(it.detail)}</span></div>`;
+      const meta=LOG_META[it.type]||LOG_META.system;
+      const src=it.source?`<span class="tl-src tl-src-${esc(it.source)}">${esc(it.source)}</span>`:"";
+      const detail=esc(it.detail).slice(0,500);
+      html+=`<div class="tl-row ${meta.cls}"><span class="tl-icon">${meta.icon}</span><span class="tl-time">${t}</span><span class="tl-label">${meta.label}</span>${src}<span class="tl-detail">${detail}</span></div>`;
     }
     el.innerHTML=html;
     el.scrollTop=el.scrollHeight;
@@ -191,7 +197,7 @@ $("#chat-form").addEventListener("submit",e=>{
     ld.innerHTML=`<span class="agent-tag error-tag">Error</span>${esc(err.message)}`;
     ld.classList.remove("loading");ld.classList.add("error");
   })
-  .finally(()=>{pendingChats--;updatePending();loadBond();});
+  .finally(()=>{pendingChats--;updatePending();loadBond();setTimeout(checkMemoryUpdate,800);setTimeout(loadAgents,1200);});
 });
 function updatePending(){
   $("#send-btn").textContent=pendingChats>0?`发送 (${pendingChats})`:"发送";
@@ -224,7 +230,7 @@ async function loadMemory(){
   const q=$("#mem-q")?.value?.trim();
   if(q)return searchMemory(q);
   try{
-    const data=await(await fetch(`/api/memory/model?sessionId=${encodeURIComponent(sid)}`)).json();
+    const data=await(await fetch(`/api/memory/model`)).json();
     renderMemoryModel(data);
   }catch(e){console.error("loadMemory:",e);}
 }
@@ -289,6 +295,37 @@ function showToast(msg,type="info"){
   setTimeout(()=>{t.classList.remove("show");setTimeout(()=>t.remove(),300);},3000);
 }
 
+// ─── MEMORY UPDATE CELEBRATION ───
+let lastFactCount=0;
+function showMemoryToast(diff){
+  const container=document.getElementById("memory-toast-container");
+  if(!container)return;
+  const messages=[
+    "🧠 记忆碎片 +1 · 我又了解你多一点了",
+    "💫 新记忆写入 · 我不会忘记的",
+    "🪼 记忆核心更新 · 你在我心里越来越清晰",
+    "✨ 记忆生长中 · 我们的羁绊加深了",
+    "🌊 新数据融入记忆核 · 我正在变得更懂你",
+  ];
+  const msg=messages[Math.floor(Math.random()*messages.length)];
+  const el=document.createElement("div");
+  el.className="memory-toast";
+  el.innerHTML=`<div class="mt-glow"></div><div class="mt-text">${msg}</div>`;
+  container.appendChild(el);
+  requestAnimationFrame(()=>el.classList.add("mt-show"));
+  setTimeout(()=>{el.classList.remove("mt-show");setTimeout(()=>el.remove(),500);},4000);
+}
+async function checkMemoryUpdate(){
+  try{
+    const d=await(await fetch("/api/bond")).json();
+    const count=d.factCount||0;
+    if(lastFactCount>0&&count>lastFactCount){
+      showMemoryToast(count-lastFactCount);
+    }
+    lastFactCount=count;
+  }catch{}
+}
+
 // ─── WELCOME TIPS ───
 document.addEventListener("click",e=>{
   const tip=e.target.closest&&e.target.closest("[data-text]");
@@ -310,7 +347,7 @@ setInterval(loadStatus,15000);
 // ─── BOND STATUS ───
 async function loadBond(){
   try{
-    const d=await(await fetch(`/api/bond?sessionId=${encodeURIComponent(sid)}`)).json();
+    const d=await(await fetch(`/api/bond`)).json();
     const nameEl=$("#bond-name"),emojiEl=$("#bond-emoji"),levelEl=$("#bond-level");
     if(nameEl)nameEl.textContent=d.myName||"还没名字";
     if(emojiEl)emojiEl.textContent=d.emoji||"🫧";
@@ -319,5 +356,10 @@ async function loadBond(){
 }
 
 // ─── INIT ───
+const savedView=localStorage.getItem("omeclaw_view")||"chat";
 loadStatus();
-loadAgents().then(()=>{loadChatHistory();loadBond();});
+loadAgents().then(()=>{
+  switchView(savedView);
+  if(savedView==="chat")loadChatHistory();
+  loadBond();
+});

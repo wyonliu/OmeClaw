@@ -19,11 +19,11 @@
         </div>
       </div>
       <div class="sidebar-section">
-        <button class="nav-btn active" data-view="chat">💬 聊天</button>
-        <button class="nav-btn" data-view="agents">🧩 智能体</button>
-        <button class="nav-btn" data-view="activity">📋 动态</button>
-        <button class="nav-btn" data-view="memory">🧠 记忆</button>
-        <button class="nav-btn" data-view="status">📊 系统</button>
+        <button class="nav-btn active" data-view="chat">💬 对话</button>
+        <button class="nav-btn" data-view="agents">🧬 分身体</button>
+        <button class="nav-btn" data-view="activity">📡 日志</button>
+        <button class="nav-btn" data-view="memory">🧠 记忆核</button>
+        <button class="nav-btn" data-view="status">⚙️ 中枢</button>
       </div>
       <div class="sidebar-section agent-list" id="sidebar-agents"></div>
       <div class="sidebar-footer">
@@ -48,7 +48,7 @@
 
       <!-- Agents -->
       <div id="view-agents" class="view">
-        <div class="view-header"><h2>Agent Management</h2><button class="btn-primary" id="create-agent-btn">+ 创建 Agent</button></div>
+        <div class="view-header"><h2>分身体管理</h2><button class="btn-primary" id="create-agent-btn">+ 唤醒新分身</button></div>
         <div id="agents-grid" class="card-grid"></div>
         <div class="modal" id="create-modal" style="display:none">
           <div class="modal-content">
@@ -66,14 +66,14 @@
 
       <!-- Activity -->
       <div id="view-activity" class="view">
-        <div class="view-header"><h2>动态</h2><button class="btn-secondary" id="refresh-activity">刷新</button></div>
+        <div class="view-header"><h2>系统日志</h2><button class="btn-secondary" id="refresh-activity">刷新</button></div>
         <div id="activity-log" class="timeline"></div>
       </div>
 
       <!-- Memory -->
       <div id="view-memory" class="view">
         <div class="view-header">
-          <h2>记忆体</h2>
+          <h2>记忆核心</h2>
           <div class="search-group"><input type="text" id="mem-q" placeholder="搜索记忆..."><button class="btn-primary" id="mem-search-btn">搜索</button></div>
         </div>
         <div id="mem-results" class="memory-view"></div>
@@ -81,11 +81,12 @@
 
       <!-- Status -->
       <div id="view-status" class="view">
-        <div class="view-header"><h2>System Status</h2></div>
+        <div class="view-header"><h2>系统中枢</h2></div>
         <div id="status-grid" class="card-grid"></div>
       </div>
     </main>
   </div>
+  <div id="memory-toast-container"></div>
   <script src="app.js"></script>
 </body>
 </html>

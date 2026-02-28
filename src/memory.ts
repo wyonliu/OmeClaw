@@ -41,6 +41,7 @@ export function initMemory(dataDir: string) {
     );
     CREATE INDEX IF NOT EXISTS idx_know_key ON knowledge(key);
   `);
+  migrateUserFacts();
 }
 
 export function saveMessage(sessionKey: string, agentId: string, role: string, content: string) {
@@ -133,30 +134,42 @@ export function getHistoryForSession(sessionKey: string, agentId?: string, limit
   return db.prepare(sql).all(...args) as any[];
 }
 
-const USER_FACTS_PREFIX = "user:";
-export function getUserFacts(sessionKey: string): Array<{ key: string; value: string }> {
-  const scope = USER_FACTS_PREFIX + sessionKey.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
-  return db.prepare("SELECT key, value FROM knowledge WHERE agent_id = ? ORDER BY updated_at DESC").all(scope) as any[];
+const OWNER_SCOPE = "user:owner";
+
+function migrateUserFacts() {
+  const oldScopes = db.prepare(
+    "SELECT DISTINCT agent_id FROM knowledge WHERE agent_id LIKE 'user:%' AND agent_id != ?"
+  ).all(OWNER_SCOPE) as Array<{ agent_id: string }>;
+
+  if (!oldScopes.length) return;
+  console.log(`[memory] migrating user facts from ${oldScopes.length} old scopes to global...`);
+  for (const { agent_id: oldScope } of oldScopes) {
+    const oldFacts = db.prepare("SELECT key, value FROM knowledge WHERE agent_id = ?").all(oldScope) as Array<{ key: string; value: string }>;
+    for (const f of oldFacts) {
+      const exists = db.prepare("SELECT id FROM knowledge WHERE agent_id = ? AND key = ?").get(OWNER_SCOPE, f.key);
+      if (!exists) {
+        db.prepare("INSERT INTO knowledge (agent_id, key, value) VALUES (?, ?, ?)").run(OWNER_SCOPE, f.key, f.value);
+      }
+    }
+    db.prepare("DELETE FROM knowledge WHERE agent_id = ?").run(oldScope);
+  }
+  console.log(`[memory] migration done.`);
 }
-export function saveUserFact(sessionKey: string, key: string, value: string) {
-  const scope = USER_FACTS_PREFIX + sessionKey.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
-  const existing = db.prepare("SELECT id FROM knowledge WHERE agent_id = ? AND key = ?").get(scope, key);
+
+export function getUserFacts(_sessionKey?: string): Array<{ key: string; value: string }> {
+  return db.prepare("SELECT key, value FROM knowledge WHERE agent_id = ? ORDER BY updated_at DESC").all(OWNER_SCOPE) as any[];
+}
+export function saveUserFact(_sessionKey: string, key: string, value: string) {
+  const existing = db.prepare("SELECT id FROM knowledge WHERE agent_id = ? AND key = ?").get(OWNER_SCOPE, key);
   if (existing) {
-    db.prepare("UPDATE knowledge SET value = ?, updated_at = unixepoch() WHERE agent_id = ? AND key = ?").run(value, scope, key);
+    db.prepare("UPDATE knowledge SET value = ?, updated_at = unixepoch() WHERE agent_id = ? AND key = ?").run(value, OWNER_SCOPE, key);
   } else {
-    db.prepare("INSERT INTO knowledge (agent_id, key, value) VALUES (?, ?, ?)").run(scope, key, value);
+    db.prepare("INSERT INTO knowledge (agent_id, key, value) VALUES (?, ?, ?)").run(OWNER_SCOPE, key, value);
   }
 }
 
-export function getRecentConversations(limit = 30): Array<{ session_key: string; role: string; content: string; agent_id: string; created_at: number }> {
-  return db.prepare(
-    "SELECT session_key, role, content, agent_id, created_at FROM messages ORDER BY id DESC LIMIT ?"
-  ).all(limit) as any[];
-}
-
-export function getUserFactCount(sessionKey: string): number {
-  const scope = USER_FACTS_PREFIX + sessionKey.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
-  return (db.prepare("SELECT COUNT(*) as c FROM knowledge WHERE agent_id = ?").get(scope) as any).c;
+export function getUserFactCount(_sessionKey?: string): number {
+  return (db.prepare("SELECT COUNT(*) as c FROM knowledge WHERE agent_id = ?").get(OWNER_SCOPE) as any).c;
 }
 
 export function closeMemory() {
