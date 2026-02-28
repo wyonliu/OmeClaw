@@ -8,7 +8,7 @@
   "keywords": ["ai", "agent", "multi-agent", "a2a", "feishu", "telegram", "discord", "mcp", "deepseek", "openai", "claude", "agent-os"],
   "author": "wyonliu <wyonliu@gmail.com>",
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/wyonliu/omeclaw.git" },
+  "repository": { "type": "git", "url": "https://github.com/wyonliu/OmeClaw.git" },
   "dependencies": {
     "openai": "^4.82.0",
     "better-sqlite3": "^12.6.2",
