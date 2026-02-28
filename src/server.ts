@@ -4,7 +4,7 @@ import { resolve, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Config } from "./config.js";
 import { listAgents, routeAgent, runAgent, initAgentBus, agentEvents } from "./agent.js";
-import { initMemory, getMessageCount, searchMemory, getRecentMessages, getHistoryForSession, getUserFacts, getUserFactCount } from "./memory.js";
+import { initMemory, getMessageCount, searchMemory, getRecentMessages, getHistoryForSession, getMergedHistory, getUserFacts, getUserFactCount } from "./memory.js";
 import { bus } from "./bus.js";
 import { listTools } from "./tools.js";
 import { createLarkAdapter } from "./gateway/lark.js";
@@ -21,6 +21,13 @@ const MIME: Record<string, string> = {
 
 interface ActivityLog { time: number; type: string; agent: string; detail: string; source?: string }
 const activityLog: ActivityLog[] = [];
+
+interface EvolutionEvent { time: number; type: string; detail: string; emoji: string }
+const evolutionLog: EvolutionEvent[] = [];
+function logEvolution(type: string, detail: string, emoji: string) {
+  evolutionLog.push({ time: Date.now(), type, detail, emoji });
+  if (evolutionLog.length > 200) evolutionLog.splice(0, 100);
+}
 
 let larkLogChatId = "";
 function logActivity(type: string, agent: string, detail: string, source?: string) {
@@ -54,15 +61,34 @@ export function startServer(config: Config, port: number, configPath?: string) {
 
   agentEvents.on("tool_call", (d: any) => {
     logActivity("tool", d.agentId, `🔧 ${d.tool}(${JSON.stringify(d.args).slice(0, 80)})`);
-    if (d.tool === "remember_about_user") logActivity("memory", d.agentId, `🧠 记忆写入: ${d.args?.key} = ${d.args?.value}`.slice(0, 120));
+    if (d.tool === "remember_about_user") {
+      logActivity("memory", d.agentId, `🧠 记忆写入: ${d.args?.key} = ${d.args?.value}`.slice(0, 120));
+      logEvolution("memory", `记忆生长 · ${d.args?.key}`, "🧠");
+    }
   });
   agentEvents.on("tool_result", (d: any) => logActivity("tool_result", d.agentId, `✅ ${d.tool} → ${d.result.slice(0, 100)}`));
-  agentEvents.on("agent_created", (d: any) => logActivity("agent_created", d.id, `🧬 新分身体唤醒: ${d.name} [${d.role}]`));
+  agentEvents.on("agent_created", async (d: any) => {
+    logActivity("agent_created", d.id, `🧬 新分身体唤醒: ${d.name} [${d.role}]`);
+    logEvolution("agent", `分身体「${d.name}」觉醒`, "🧬");
+    if (configPath && existsSync(configPath) && config.agents[d.id]) {
+      try {
+        const { parse: parseYaml, stringify: stringifyYaml } = await import("yaml");
+        const raw = readFileSync(configPath, "utf-8");
+        const parsed = parseYaml(raw) || {};
+        if (!parsed.agents) parsed.agents = {};
+        const a = config.agents[d.id];
+        parsed.agents[d.id] = { name: a.name, model: a.model, systemPrompt: a.systemPrompt, role: a.role, tools: a.tools || [] };
+        writeFileSync(configPath, stringifyYaml(parsed, { lineWidth: 0 }), "utf-8");
+        console.log(`[server] Agent "${d.id}" persisted to config`);
+      } catch (e: any) { console.warn("[server] Failed to persist agent:", e.message); }
+    }
+  });
 
+  const OWNER_SESSION = "owner";
   const onMessage = async (msg: GatewayMessage) => {
     logActivity("user_in", msg.gateway, `${msg.text.slice(0, 120)}`, msg.gateway);
     const { agentId, cleanText } = routeAgent(config, msg.text);
-    const reply = await runAgent(config, `${msg.gateway}:${msg.senderId}`, agentId, cleanText);
+    const reply = await runAgent(config, OWNER_SESSION, agentId, cleanText);
     logActivity("agent_out", agentId, reply.slice(0, 150), msg.gateway);
     return reply;
   };
@@ -159,6 +185,10 @@ export function startServer(config: Config, port: number, configPath?: string) {
       return json(res, { timeline: activityLog.slice(-200) });
     }
 
+    if (url === "/api/evolution" && method === "GET") {
+      return json(res, { events: evolutionLog.slice(-50).reverse() });
+    }
+
     if (url === "/api/bus" && method === "GET") {
       return json(res, { messages: bus.history() });
     }
@@ -172,20 +202,26 @@ export function startServer(config: Config, port: number, configPath?: string) {
       return json(res, { results: searchMemory(q, undefined, 20) });
     }
 
+    if (url === "/api/memory/all" && method === "GET") {
+      const facts = getUserFacts();
+      return json(res, { facts, text: facts.map(f => `${f.key}: ${f.value}`).join("\n") });
+    }
+
     if (url.startsWith("/api/memory/model") && method === "GET") {
       const facts = getUserFacts();
 
       const categories = [
-        { id: "basic", name: "基本画像", icon: "👤", keys: ["姓名","名字","年龄","性别","生日","城市","职业","公司","行业","工作"] },
-        { id: "tags", name: "身份标签", icon: "🏷️", keys: ["星座","属相","生肖","八字","MBTI","血型"] },
-        { id: "personality", name: "性格特质", icon: "🧠", keys: ["性格","内向","外向","理性","感性","沟通","决策"] },
-        { id: "likes", name: "喜好偏好", icon: "❤️", keys: ["喜欢","讨厌","食物","音乐","电影","书","运动","爱好","兴趣","习惯","作息"] },
-        { id: "values", name: "价值观", icon: "⚖️", keys: ["信条","座右铭","底线","原则","态度","价值"] },
-        { id: "people", name: "身边的人", icon: "👥", keys: ["家人","父母","伴侣","恋人","配偶","朋友","同事","子女","兄弟","姐妹"] },
-        { id: "moments", name: "重要时刻", icon: "📌", keys: ["纪念日","里程碑","转折","经历","特殊"] },
-        { id: "goals", name: "目标梦想", icon: "🎯", keys: ["目标","计划","理想","梦想","焦虑","困扰","在忙","项目"] },
-        { id: "emotion", name: "情感状态", icon: "💭", keys: ["心情","情绪","开心","难过","压力","烦","累","状态"] },
-        { id: "meta", name: "玄学档案", icon: "🔮", keys: ["命理","紫微","五行","本命","运势","玄学"] },
+        { id: "gene", name: "基因层", icon: "🧬", keys: ["生日","属相","星座","血型","八字","出生地","籍贯"] },
+        { id: "personality", name: "人格层", icon: "🎭", keys: ["姓名","名字","MBTI","九型","大五","核心特质","自我认知","人生信条"] },
+        { id: "character", name: "性格层", icon: "🧠", keys: ["内向","外向","理性","感性","决策","沟通","情绪"] },
+        { id: "likes", name: "爱好层", icon: "❤️", keys: ["喜欢","讨厌","食物","音乐","电影","书","运动","旅行","收藏"] },
+        { id: "skill", name: "技能层", icon: "⚡", keys: ["擅长","专业","技能","语言","特长"] },
+        { id: "expression", name: "表现层", icon: "💬", keys: ["口头禅","习惯","作息","近期状态"] },
+        { id: "people", name: "关系层", icon: "👥", keys: ["家人","父母","伴侣","朋友","同事","重要的人"] },
+        { id: "moments", name: "经历层", icon: "📌", keys: ["纪念日","转折","难忘","成就","经历"] },
+        { id: "goals", name: "目标层", icon: "🎯", keys: ["目标","计划","理想","焦虑","在忙","项目"] },
+        { id: "emotion", name: "情感层", icon: "💭", keys: ["心情","情绪","压力","开心","烦","累","状态"] },
+        { id: "meta", name: "玄学层", icon: "🔮", keys: ["命理","五行","运势","玄学"] },
       ];
 
       const result = categories.map(cat => {
@@ -217,31 +253,54 @@ export function startServer(config: Config, port: number, configPath?: string) {
       else if (factCount < 15) { level = "熟悉了"; emoji = "💙"; }
       else if (factCount < 30) { level = "老朋友"; emoji = "💎"; }
       else { level = "灵魂伴侣"; emoji = "🌊"; }
-      const myName = facts.find(f => f.key === "我的名字")?.value;
+      const myName = facts.find(f => f.key === "我的名字")?.value
+        || facts.find(f => f.key === "agent_name")?.value
+        || facts.find(f => f.key === "名字" && (f.value?.length ?? 0) < 15)?.value;
       const callUser = facts.find(f => f.key === "称呼用户为")?.value;
-      const totalCategories = 10;
+      const defaultAgentName = (() => { const a = listAgents(config).find(x => x.role === "orchestrator") || listAgents(config)[0]; return a?.name ?? "Ome"; })();
+      const totalCategories = 11;
       const catKeys = [
-        ["姓名","名字","年龄","性别","生日","城市","职业","工作"],
-        ["星座","属相","八字","MBTI","血型"],
-        ["性格","内向","外向","理性","感性"],
-        ["喜欢","讨厌","食物","音乐","电影","爱好"],
-        ["信条","底线","原则","价值"],
+        ["生日","属相","星座","血型","八字","出生地"],
+        ["MBTI","九型","大五","核心特质","信条"],
+        ["内向","外向","理性","感性","决策","沟通"],
+        ["喜欢","讨厌","食物","音乐","电影","运动","旅行"],
+        ["擅长","专业","技能","语言","特长"],
+        ["口头禅","习惯","作息","近期状态"],
         ["家人","伴侣","朋友","同事"],
-        ["纪念日","转折","经历"],
-        ["目标","计划","梦想","在忙"],
-        ["心情","情绪","压力","状态"],
+        ["纪念日","转折","难忘","成就","经历"],
+        ["目标","计划","梦想","焦虑","在忙"],
+        ["心情","情绪","压力","开心","烦","累"],
         ["命理","五行","运势"],
       ];
       const filledCategories = catKeys.filter(keys => facts.some(f => keys.some(k => f.key.includes(k)))).length;
       const completeness = Math.round(filledCategories / totalCategories * 100);
-      return json(res, { level, emoji, factCount, myName, callUser, completeness, filledCategories, totalCategories });
+      const xp = factCount * 10 + filledCategories * 50;
+      const milestones = [
+        { level: 1, name: "初见", xp: 0, emoji: "🫧" },
+        { level: 2, name: "认识中", xp: 50, emoji: "🪼" },
+        { level: 3, name: "熟悉了", xp: 150, emoji: "💙" },
+        { level: 4, name: "老朋友", xp: 400, emoji: "💎" },
+        { level: 5, name: "灵魂伴侣", xp: 900, emoji: "🌊" },
+      ];
+      const currentMilestone = milestones.find((_, i) => xp < (milestones[i + 1]?.xp ?? Infinity)) || milestones[milestones.length - 1];
+      const nextMilestone = milestones[milestones.findIndex(m => m.name === currentMilestone.name) + 1];
+      const progressToNext = nextMilestone ? Math.round(((xp - currentMilestone.xp) / (nextMilestone.xp - currentMilestone.xp)) * 100) : 100;
+      return json(res, {
+        level, emoji, factCount, myName: myName || defaultAgentName, callUser,
+        completeness, filledCategories, totalCategories,
+        xp, currentMilestone, nextMilestone, progressToNext,
+      });
     }
 
     if (url.startsWith("/api/chat/history") && method === "GET") {
       const params = new URL(fullUrl, "http://localhost").searchParams;
       const sessionId = params.get("sessionId") ?? "";
+      const merged = params.get("merged") === "1" || params.get("merged") === "true";
+      if (merged || sessionId === "owner") {
+        return json(res, { messages: getMergedHistory(undefined, 150) });
+      }
       if (!sessionId) return json(res, { messages: [] });
-      const key = `web:${sessionId}`;
+      const key = sessionId === "owner" ? "owner" : `web:${sessionId}`;
       return json(res, { messages: getHistoryForSession(key, undefined, 100) });
     }
 
@@ -251,7 +310,6 @@ export function startServer(config: Config, port: number, configPath?: string) {
         const msg = body.message?.trim();
         if (!msg) return json(res, { error: "message required" }, 400);
 
-        // Respect agentId from frontend if provided, otherwise auto-route
         let agentId: string;
         let cleanText: string;
         if (body.agentId && config.agents[body.agentId]) {
@@ -265,7 +323,7 @@ export function startServer(config: Config, port: number, configPath?: string) {
         }
 
         logActivity("user_in", agentId, msg.slice(0, 120), "web");
-        const reply = await runAgent(config, `web:${body.sessionId ?? "default"}`, agentId, cleanText);
+        const reply = await runAgent(config, OWNER_SESSION, agentId, cleanText);
         logActivity("agent_out", agentId, reply.slice(0, 150), "web");
         return json(res, { reply, agentId });
       } catch (e: any) { return json(res, { error: e.message }, 500); }
@@ -284,6 +342,7 @@ export function startServer(config: Config, port: number, configPath?: string) {
   });
 
   logActivity("system", "server", `🪼 OmeClaw 启动 · ${listAgents(config).length} agents · port ${port}`);
+  logEvolution("start", "分身系统苏醒", "🪼");
 
   server.listen(port, () => {
     console.log(`\n  🪼 OmeClaw v0.4.0 — Agent Operating System`);

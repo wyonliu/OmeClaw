@@ -16,6 +16,7 @@
         <div class="bond-info">
           <div class="bond-name" id="bond-name">还没名字</div>
           <div class="bond-level" id="bond-level">初见</div>
+          <div class="bond-progress" id="bond-progress"></div>
         </div>
       </div>
       <div class="sidebar-section">
@@ -74,7 +75,11 @@
       <div id="view-memory" class="view">
         <div class="view-header">
           <h2>记忆核心</h2>
-          <div class="search-group"><input type="text" id="mem-q" placeholder="搜索记忆..."><button class="btn-primary" id="mem-search-btn">搜索</button></div>
+          <div class="mem-actions">
+            <div class="search-group"><input type="text" id="mem-q" placeholder="搜索记忆..."><button class="btn-primary" id="mem-search-btn">搜索</button></div>
+            <button class="btn-secondary" id="mem-view-all-btn">查看全部</button>
+            <button class="btn-secondary" id="mem-copy-btn">一键复制</button>
+          </div>
         </div>
         <div id="mem-results" class="memory-view"></div>
       </div>
@@ -83,6 +88,10 @@
       <div id="view-status" class="view">
         <div class="view-header"><h2>系统中枢</h2></div>
         <div id="status-grid" class="card-grid"></div>
+        <div class="evolution-section">
+          <h3 class="evolution-title">🔄 自进化</h3>
+          <div id="evolution-list" class="evolution-list"></div>
+        </div>
       </div>
     </main>
   </div>

@@ -1,5 +1,5 @@
 const $=s=>document.querySelector(s),$$=s=>document.querySelectorAll(s);
-const sid=(()=>{let x=localStorage.getItem("omeclaw_sid");if(!x){x="w-"+Math.random().toString(36).slice(2,10);localStorage.setItem("omeclaw_sid",x);}return x;})();
+const CHAT_SESSION="owner";
 let curAgent="",agents=[],pendingChats=0;
 
 // ─── UTILS ───
@@ -74,15 +74,42 @@ function setConn(ok){
 async function loadStatus(){
   try{
     const d=await(await fetch("/api/status")).json();setConn(true);
+    loadEvolution();
     const fmt=s=>s<60?`${Math.floor(s)}s`:s<3600?`${Math.floor(s/60)}m ${Math.floor(s%60)}s`:`${Math.floor(s/3600)}h ${Math.floor(s%3600/60)}m`;
+    const agents=d.agents||[];
+    const gw=d.gateways?.length?d.gateways.join(", "):"Web";
     $("#status-grid").innerHTML=`
-      <div class="card stat"><div class="stat-label">Status</div><div class="stat-val green">● Running</div></div>
-      <div class="card stat"><div class="stat-label">Uptime</div><div class="stat-val">${fmt(d.uptime)}</div></div>
-      <div class="card stat"><div class="stat-label">Agents</div><div class="stat-val">${d.agents?.length??0}</div></div>
-      <div class="card stat"><div class="stat-label">Gateways</div><div class="stat-val">${d.gateways?.length?d.gateways.join(", "):"Web"}</div></div>
-      <div class="card stat"><div class="stat-label">Memory</div><div class="stat-val">${d.memory?.messages??0} msgs</div></div>
-      <div class="card stat"><div class="stat-label">Tools</div><div class="stat-val">${d.tools?.join(", ")}</div></div>`;
+      <div class="status-hero">
+        <div class="status-status"><span class="pulse-dot"></span>运行中</div>
+        <div class="status-uptime">已运行 ${fmt(d.uptime)}</div>
+      </div>
+      <div class="status-section">
+        <div class="status-section-title">分身体</div>
+        <div class="status-agents">${agents.map(a=>`<div class="status-agent"><span class="agent-role-dot ${a.role}"></span><span>${esc(a.name)}</span><span class="agent-id">${esc(a.id)}</span></div>`).join("")}</div>
+      </div>
+      <div class="status-section">
+        <div class="status-section-title">通道</div>
+        <div class="status-val">${esc(gw)}</div>
+      </div>
+      <div class="status-section">
+        <div class="status-section-title">记忆库</div>
+        <div class="status-val">${d.memory?.messages??0} 条消息</div>
+      </div>
+      <div class="status-section">
+        <div class="status-section-title">工具</div>
+        <div class="status-tools">${(d.tools||[]).map(t=>`<span class="tool-tag">${esc(t)}</span>`).join("")}</div>
+      </div>`;
   }catch{setConn(false);}
+}
+async function loadEvolution(){
+  try{
+    const d=await(await fetch("/api/evolution")).json();
+    const el=$("#evolution-list");
+    if(!el)return;
+    const events=d.events||[];
+    if(!events.length){el.innerHTML=`<p class="empty-msg">暂无进化记录</p>`;return;}
+    el.innerHTML=events.map(e=>`<div class="evolution-item"><span class="ev-emoji">${e.emoji||"✨"}</span><span class="ev-time">${timeFmt(e.time)}</span><span class="ev-detail">${esc(e.detail)}</span></div>`).join("");
+  }catch(e){console.error("loadEvolution:",e);}
 }
 
 // ─── ACTIVITY ── 系统日志 ───
@@ -130,7 +157,7 @@ function thinkingHtml(name){
 // 加载聊天历史 — 只在拿到数据后才替换内容
 async function loadChatHistory(){
   try{
-    const resp=await fetch(`/api/chat/history?sessionId=${encodeURIComponent(sid)}`);
+    const resp=await fetch(`/api/chat/history?merged=1`);
     const {messages}=await resp.json();
     const container=$("#messages");
     if(!messages||!messages.length){
@@ -181,7 +208,7 @@ $("#chat-form").addEventListener("submit",e=>{
   pendingChats++;updatePending();
 
   fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({message:text,sessionId:sid,agentId:curAgent})})
+    body:JSON.stringify({message:text,sessionId:CHAT_SESSION,agentId:curAgent})})
   .then(r=>r.json())
   .then(data=>{
     if(data.error){
@@ -197,7 +224,7 @@ $("#chat-form").addEventListener("submit",e=>{
     ld.innerHTML=`<span class="agent-tag error-tag">Error</span>${esc(err.message)}`;
     ld.classList.remove("loading");ld.classList.add("error");
   })
-  .finally(()=>{pendingChats--;updatePending();loadBond();setTimeout(checkMemoryUpdate,800);setTimeout(loadAgents,1200);});
+  .finally(()=>{pendingChats--;updatePending();loadBond();loadAgents();setTimeout(checkMemoryUpdate,800);setTimeout(loadAgents,1500);setTimeout(loadAgents,3500);});
 });
 function updatePending(){
   $("#send-btn").textContent=pendingChats>0?`发送 (${pendingChats})`:"发送";
@@ -286,6 +313,24 @@ function renderMemoryModel(data){
 }
 $("#mem-search-btn")?.addEventListener("click",()=>{const q=$("#mem-q")?.value?.trim();if(q)searchMemory(q);else loadMemory();});
 $("#mem-q")?.addEventListener("keypress",e=>{if(e.key==="Enter"){e.preventDefault();$("#mem-search-btn")?.click();}});
+$("#mem-view-all-btn")?.addEventListener("click",async()=>{
+  $("#mem-q").value="";
+  try{const d=await(await fetch("/api/memory/all")).json();renderMemoryAll(d);}catch(e){showToast("加载失败","error");}
+});
+$("#mem-copy-btn")?.addEventListener("click",async()=>{
+  try{const d=await(await fetch("/api/memory/all")).json();
+  await navigator.clipboard.writeText(d.text||d.facts?.map(f=>`${f.key}: ${f.value}`).join("\n")||"");
+  showToast("已复制到剪贴板","success");}catch(e){showToast("复制失败","error");}
+});
+function renderMemoryAll(data){
+  const el=$("#mem-results");
+  const facts=data.facts||[];
+  if(!facts.length){el.innerHTML=`<p class="empty-msg">暂无记忆</p>`;return;}
+  let html=`<div class="mem-all-header"><span>共 ${facts.length} 条记忆</span></div><div class="mem-all-list">`;
+  for(const f of facts) html+=`<div class="mem-all-item"><span class="mem-fact-key">${esc(f.key)}</span><span class="mem-fact-val">${esc(f.value)}</span></div>`;
+  html+=`</div>`;
+  el.innerHTML=html;
+}
 
 // ─── TOAST ───
 function showToast(msg,type="info"){
@@ -348,10 +393,15 @@ setInterval(loadStatus,15000);
 async function loadBond(){
   try{
     const d=await(await fetch(`/api/bond`)).json();
-    const nameEl=$("#bond-name"),emojiEl=$("#bond-emoji"),levelEl=$("#bond-level");
+    const nameEl=$("#bond-name"),emojiEl=$("#bond-emoji"),levelEl=$("#bond-level"),progressEl=$("#bond-progress");
     if(nameEl)nameEl.textContent=d.myName||"还没名字";
     if(emojiEl)emojiEl.textContent=d.emoji||"🫧";
-    if(levelEl)levelEl.textContent=`${d.level} · ${d.factCount}条记忆 · ${d.completeness||0}%`;
+    const next=d.nextMilestone?` → ${d.nextMilestone.emoji} ${d.nextMilestone.name}`:"";
+    if(levelEl)levelEl.innerHTML=`<span class="bond-level-text">${d.level}</span><span class="bond-stats">${d.factCount}条 · ${d.completeness||0}%</span>${next?"<span class=\"bond-next\">"+next+"</span>":""}`;
+    if(progressEl){
+      const pct=d.progressToNext??0;
+      progressEl.innerHTML=`<div class="bond-progress-bar"><div class="bond-progress-fill" style="width:${pct}%"></div></div>`;
+    }
   }catch(e){console.error("loadBond:",e);}
 }
 

@@ -42,6 +42,20 @@ export function initMemory(dataDir: string) {
     CREATE INDEX IF NOT EXISTS idx_know_key ON knowledge(key);
   `);
   migrateUserFacts();
+  migrateMessagesToOwner();
+}
+
+/** 将历史消息统一迁移到 owner session，实现跨端打通 */
+function migrateMessagesToOwner() {
+  const rows = db.prepare("SELECT DISTINCT session_key FROM messages WHERE session_key != 'owner'").all() as Array<{ session_key: string }>;
+  if (!rows.length) return;
+  const toMigrate = rows.map(r => r.session_key).filter(k => k && k !== "owner");
+  if (!toMigrate.length) return;
+  console.log(`[memory] migrating ${toMigrate.length} sessions to owner...`);
+  for (const sk of toMigrate) {
+    db.prepare("UPDATE messages SET session_key = 'owner' WHERE session_key = ?").run(sk);
+  }
+  console.log("[memory] message migration done.");
 }
 
 export function saveMessage(sessionKey: string, agentId: string, role: string, content: string) {
@@ -132,6 +146,16 @@ export function getHistoryForSession(sessionKey: string, agentId?: string, limit
     : "SELECT role, content, agent_id, created_at FROM messages WHERE session_key = ? ORDER BY id ASC LIMIT ?";
   const args = agentId ? [sessionKey, agentId, limit] : [sessionKey, limit];
   return db.prepare(sql).all(...args) as any[];
+}
+
+/** 合并所有 session 的消息（跨端统一视图），按时间正序 */
+export function getMergedHistory(agentId?: string, limit = 150): Array<{ role: string; content: string; agent_id: string; created_at: number; session_key?: string }> {
+  const sql = agentId
+    ? "SELECT role, content, agent_id, created_at, session_key FROM messages WHERE agent_id = ? ORDER BY id DESC LIMIT ?"
+    : "SELECT role, content, agent_id, created_at, session_key FROM messages ORDER BY id DESC LIMIT ?";
+  const args = agentId ? [agentId, limit] : [limit];
+  const rows = db.prepare(sql).all(...args) as any[];
+  return rows.reverse();
 }
 
 const OWNER_SCOPE = "user:owner";

@@ -11,7 +11,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .bond-emoji{font-size:32px;line-height:1;flex-shrink:0}
 .bond-info{overflow:hidden}
 .bond-name{font-size:14px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bond-level{font-size:11px;color:var(--text2);margin-top:2px}
+.bond-level{font-size:11px;color:var(--text2);margin-top:2px;display:flex;align-items:center;flex-wrap:wrap;gap:2px}
 .sidebar-section{margin-bottom:12px}
 .section-title{font-size:10px;text-transform:uppercase;color:var(--text2);padding:4px 8px 6px;letter-spacing:1.2px;font-weight:600}
 .nav-btn{display:block;width:100%;padding:8px 12px;background:none;border:none;color:var(--text2);font-size:13px;text-align:left;border-radius:var(--r);cursor:pointer;transition:all .15s;font-family:var(--font)}
@@ -85,6 +85,44 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .stat-label{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px}
 .stat-val{font-size:20px;font-weight:700;color:var(--accent);word-break:break-word}
 .stat-val.green{color:var(--green)}
+
+/* Status 中枢 */
+#view-status{overflow-y:auto}
+#view-status .card-grid{display:flex;flex-direction:column;gap:0;padding:20px 24px;max-width:520px;overflow:visible}
+.status-hero{background:linear-gradient(135deg,var(--accent-bg),rgba(77,159,255,.08));border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:20px;text-align:center}
+.status-status{font-size:16px;font-weight:600;color:var(--green);display:flex;align-items:center;justify-content:center;gap:8px}
+.pulse-dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.status-uptime{font-size:12px;color:var(--text2);margin-top:6px}
+.status-section{margin-bottom:16px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px}
+.status-section-title{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);margin-bottom:8px;font-weight:600}
+.status-agents{display:flex;flex-direction:column;gap:6px}
+.status-agent{display:flex;align-items:center;gap:8px;font-size:13px}
+.agent-role-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.agent-role-dot.orchestrator{background:var(--accent)}
+.agent-role-dot.worker{background:var(--green)}
+.agent-role-dot.specialist{background:var(--orange)}
+.agent-id{font-size:10px;color:var(--text2);margin-left:auto}
+.status-tools{display:flex;flex-wrap:wrap;gap:6px}
+.tool-tag{font-size:10px;padding:3px 8px;background:var(--surface2);border-radius:4px;color:var(--text2)}
+.status-val{font-size:13px;color:var(--text)}
+
+/* 自进化 */
+.evolution-section{margin:20px 24px;padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;max-width:520px}
+.evolution-title{font-size:13px;font-weight:600;color:var(--accent);margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.evolution-list{display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto}
+.evolution-item{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg);border-radius:6px;font-size:12px}
+.ev-emoji{font-size:14px}
+.ev-time{color:var(--text2);font-size:10px;font-family:"SF Mono",Menlo,monospace;min-width:75px}
+.ev-detail{color:var(--text);flex:1}
+
+/* Bond 进度条 */
+.bond-progress{margin-top:6px}
+.bond-progress-bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+.bond-progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--blue));border-radius:2px;transition:width .4s}
+.bond-level-text{font-weight:600}
+.bond-stats{font-size:11px;color:var(--text2);margin-left:4px}
+.bond-next{font-size:10px;color:var(--accent);margin-left:4px}
 .tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:500}
 .tag.role{background:var(--accent-bg);color:var(--accent)}
 .tag.tool{background:rgba(0,212,123,0.1);color:var(--green)}
@@ -176,6 +214,12 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .search-group{display:flex;gap:8px}
 .search-group input{padding:7px 14px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--r);font-size:13px;outline:none;width:280px;font-family:var(--font);transition:border-color .15s}
 .search-group input:focus{border-color:var(--accent)}
+.mem-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.mem-all-header{font-size:12px;color:var(--text2);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.mem-all-list{display:flex;flex-direction:column;gap:6px}
+.mem-all-item{display:flex;gap:12px;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-size:13px;line-height:1.5}
+.mem-all-item .mem-fact-key{color:var(--accent);font-weight:600;min-width:80px;flex-shrink:0}
+.mem-all-item .mem-fact-val{color:var(--text);word-break:break-word}
 
 /* Toast */
 .toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:var(--r);font-size:13px;z-index:200;transform:translateY(20px);opacity:0;transition:all .3s ease;max-width:360px;box-shadow:0 8px 24px rgba(0,0,0,.3)}
