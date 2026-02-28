@@ -196,6 +196,15 @@ export function getUserFactCount(_sessionKey?: string): number {
   return (db.prepare("SELECT COUNT(*) as c FROM knowledge WHERE agent_id = ?").get(OWNER_SCOPE) as any).c;
 }
 
+export function getLatestMessageId(): number {
+  const row = db.prepare("SELECT MAX(id) as maxId FROM messages").get() as { maxId: number | null };
+  return row?.maxId ?? 0;
+}
+
+export function getMessagesSince(sinceId: number, limit = 50): Array<{ id: number; role: string; content: string; agent_id: string; created_at: number }> {
+  return db.prepare("SELECT id, role, content, agent_id, created_at FROM messages WHERE id > ? ORDER BY id ASC LIMIT ?").all(sinceId, limit) as any[];
+}
+
 export function closeMemory() {
   db?.close();
 }

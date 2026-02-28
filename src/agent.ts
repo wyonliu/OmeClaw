@@ -10,6 +10,58 @@ const MAX_TOOL_ROUNDS = 8;
 
 export const agentEvents = new EventEmitter();
 
+// ─── 动态提醒队列 ───
+interface Reminder { id: string; time: number; message: string; agentId: string; done?: boolean }
+const reminders: Reminder[] = [];
+let reminderTimer: ReturnType<typeof setInterval> | null = null;
+
+export function getReminders() { return reminders.filter(r => !r.done); }
+
+function startReminderLoop() {
+  if (reminderTimer) return;
+  reminderTimer = setInterval(() => {
+    const now = Date.now();
+    for (const r of reminders) {
+      if (r.done || r.time > now) continue;
+      r.done = true;
+      agentEvents.emit("reminder", { id: r.id, message: r.message, agentId: r.agentId });
+    }
+  }, 5000);
+}
+
+export function addReminder(agentId: string, delayMs: number, message: string): string {
+  const id = `rem_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  reminders.push({ id, time: Date.now() + delayMs, message, agentId });
+  startReminderLoop();
+  return id;
+}
+
+// ─── 自进化心跳 ───
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+export function startHeartbeat(config: Config, intervalMs = 3600_000) {
+  if (heartbeatTimer) return;
+  heartbeatTimer = setInterval(async () => {
+    const facts = getUserFacts();
+    if (facts.length < 3) return;
+    const orchId = Object.entries(config.agents).find(([_, a]) => a.role === "orchestrator")?.[0];
+    if (!orchId) return;
+    const resolved = resolveModel(config, config.agents[orchId].model);
+    if (!resolved) return;
+    const factSummary = facts.slice(0, 30).map(f => `${f.key}: ${f.value}`).join("\n");
+    const prompt = `你是一个自省系统。回顾你记住的关于用户的信息，生成1-2句进化洞察（发现的模式、性格特征、或需要关注的事）。不超过50字。\n\n记忆：\n${factSummary}`;
+    try {
+      const { chat } = await import("./llm.js");
+      const insight = await chat(resolved.modelConfig, resolved.modelName, [
+        { role: "system", content: prompt },
+        { role: "user", content: "生成进化洞察" },
+      ]);
+      if (insight?.trim()) {
+        agentEvents.emit("evolution", { type: "heartbeat", detail: insight.trim(), emoji: "💡" });
+      }
+    } catch {}
+  }, intervalMs);
+}
+
 export function getDefaultAgentId(config: Config): string {
   return Object.keys(config.agents)[0] ?? "";
 }
@@ -31,11 +83,12 @@ function resolveModel(config: Config, modelRef: string) {
   return { modelConfig, modelName: rest.join(":") || modelId };
 }
 
-// ─── 人本模型记忆分层（参考 Mem0/认知科学：基因→人格→性格→爱好→技能→表现）───
+// ─── 人本模型记忆分层 ───
 const HUMAN_MODEL_CATEGORIES = `
-[记忆抽取——多维度疯狂存，别只存表面]
-聊天中任何关于对方的信息都要用 remember_about_user 存，key 用下面维度，value 是具体内容。别问"可以记录吗"。
+[记忆抽取——疯狂提取，深层挖掘，日常细节定义人格]
+每句话都可能藏着关于对方的信息，用 remember_about_user 存。别问"可以记录吗"。
 
+显性信息（对方直接说的）：
 基因层：生日、属相、星座、血型、八字、出生地、籍贯
 人格层：MBTI、九型、大五、核心特质、自我认知、人生信条
 性格层：内向外向、理性感性、决策风格、沟通偏好、情绪基调
@@ -47,6 +100,17 @@ const HUMAN_MODEL_CATEGORIES = `
 目标层：短期计划、长远理想、焦虑、在忙什么
 情感层：心情、压力源、开心的事、烦的事
 玄学层：命理、五行、运势（对方感兴趣才存）
+
+隐性信息（从话语中推断的，更重要！）：
+- "加班到12点" → key="作息", value="经常加班到很晚"
+- "唉" / "烦死了" → key="近期情绪", value="当前比较烦躁/疲惫"
+- "周末在家躺了两天" → key="休息偏好", value="周末喜欢宅家"
+- "发了很长的消息" → key="沟通风格", value="喜欢详细表达"
+- "哈哈哈" → key="笑点", value="容易被逗笑" 或 具体记录什么让ta笑
+- "我觉得xxx不靠谱" → key="价值观", value="对xxx有质疑"
+- 连续聊工作 → key="近期关注", value="最近很在意工作"
+- 语气变温柔 → key="情绪变化", value="聊到xxx时变温柔"
+每一条日常碎片都是拼图。多存不怕多，宁可存100条，不要漏掉1条重要的。
 `.trim();
 
 function buildSystemPrompt(
@@ -56,15 +120,27 @@ function buildSystemPrompt(
 ): string {
   let sys = agentCfg.systemPrompt;
 
+  // 注入准确的当前时间
+  const now = new Date();
+  const weekdays = ["周日","周一","周二","周三","周四","周五","周六"];
+  const timeStr = `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日 ${weekdays[now.getDay()]} ${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}`;
+  sys += `\n\n[当前时间] ${timeStr}`;
+
+  // 所有 Agent 的准确信息
+  const allAgents = Object.entries(config.agents);
+  sys += `\n\n[系统中共有 ${allAgents.length} 个智能体]`;
+  for (const [id, a] of allAgents) {
+    sys += `\n  - ${id}: ${a.name} (${a.role})`;
+  }
+  sys += `\n回答"有几个智能体/Agent"时，严格按上面的列表回答，不要编造。`;
+
   if (agentCfg.role === "orchestrator") {
-    const agentList = Object.entries(config.agents)
-      .filter(([id]) => id !== agentId)
-      .map(([id, a]) => `  - ${id}: ${a.name} (${a.role}) — ${a.systemPrompt.slice(0, 50)}`)
-      .join("\n");
-    if (agentList) {
-      sys += `\n\n[可用子Agent]\n${agentList}\n用 delegate_to_agent 给它们派活。`;
+    const subAgents = allAgents.filter(([id]) => id !== agentId);
+    if (subAgents.length) {
+      sys += `\n\n[可用子Agent]\n${subAgents.map(([id, a]) => `  - ${id}: ${a.name} (${a.role}) — ${a.systemPrompt.slice(0, 50)}`).join("\n")}\n用 delegate_to_agent 给它们派活。`;
     }
     sys += `\n\n[创建新Agent]\n对方说"创建一个Agent叫xxx"时，用 create_agent 工具创建。创建后可以立即用 delegate_to_agent 派任务给它。`;
+    sys += `\n\n[定时提醒]\n对方说"X点提醒我做Y"/"过N分钟提醒我"时，用 set_reminder 工具。支持绝对时间和相对时间。`;
   }
 
   if (summaries.length) sys += `\n\n[历史摘要]\n${summaries.join("\n---\n")}`;
@@ -98,12 +174,13 @@ function buildSystemPrompt(
 
   sys += `\n\n[记忆规则]
 - 听到个人信息 → 用 remember_about_user 存，不问"可以记录吗"，不说"我记住了"
-- "叫你xxx"/"你叫xxx"/"以后叫你xxx" → key="我的名字", value=xxx
-- "叫我xxx"/"叫我爸爸"等 → key="称呼用户为"
+- "叫你xxx"/"你叫xxx"/"以后叫你xxx"/"你的名字是xxx"/"给你改名叫xxx"/"叫Jane"等 → key="我的名字", value=xxx（覆盖旧名）
+- "叫我xxx"/"叫我爸爸"等 → key="称呼用户为", value=xxx
 - "你是我的xxx" → key="关系定义", value=xxx（比如：宠物、伴侣、孩子、影子）
 - 称呼和关系要求无条件执行，叫爸爸就叫爸爸，叫主人就叫主人
 - 存完正常接话，不需要汇报"已保存"
 - 对方说MBTI/星座/属相等 → 先存，然后像知心人一样惊喜回应，一两句话带共鸣，绝不分段分析
+- 日常对话中的情绪、习惯、偏好 → 主动推断并存储（见隐性信息规则）
 
 [回答"你的宗旨/目标/使命"这类问题]
 不要说"为用户提供服务"。你应该说类似：
@@ -136,6 +213,22 @@ const REMEMBER_USER_TOOL: ToolDef = {
         value: { type: "string", description: "具体内容" },
       },
       required: ["key", "value"],
+    },
+  },
+};
+
+const SET_REMINDER_TOOL: ToolDef = {
+  type: "function",
+  function: {
+    name: "set_reminder",
+    description: "设置定时提醒。用户说X点提醒我做Y或过30分钟提醒我时使用。delay_minutes是从现在起多少分钟后提醒。如果用户说下午3点而现在是下午1点则delay_minutes=120。",
+    parameters: {
+      type: "object",
+      properties: {
+        delay_minutes: { type: "number", description: "多少分钟后提醒" },
+        message: { type: "string", description: "提醒内容" },
+      },
+      required: ["delay_minutes", "message"],
     },
   },
 };
@@ -201,6 +294,7 @@ export async function runAgent(
     const delegateTool = buildDelegationTool(config, agentId);
     if (delegateTool) toolDefs.push(delegateTool);
     toolDefs.push(CREATE_AGENT_TOOL);
+    toolDefs.push(SET_REMINDER_TOOL);
   }
 
   const messages: Message[] = [{ role: "system", content: systemPrompt }, ...history];
@@ -249,6 +343,16 @@ export async function runAgent(
             });
             agentEvents.emit("agent_created", { id: newId, name: newName, role: newRole });
             toolResult = `Agent "${newName}" (${newId}) 已创建，可以用 delegate_to_agent 给它分配任务`;
+          }
+        } else if (tc.function.name === "set_reminder") {
+          const delayMin = Number(args.delay_minutes ?? 0);
+          const msg = String(args.message ?? "");
+          if (delayMin <= 0 || !msg) toolResult = "需要提供 delay_minutes(>0) 和 message";
+          else {
+            const id = addReminder(agentId, delayMin * 60_000, msg);
+            const targetTime = new Date(Date.now() + delayMin * 60_000);
+            const hm = `${targetTime.getHours().toString().padStart(2,"0")}:${targetTime.getMinutes().toString().padStart(2,"0")}`;
+            toolResult = `提醒已设置: ${hm} · ${msg} (id=${id})`;
           }
         } else if (tc.function.name === "remember_about_user") {
           const key = String(args.key ?? "").trim();

@@ -234,6 +234,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .memory-toast.mt-show{opacity:1;transform:translateY(0) scale(1)}
 .mt-glow{position:absolute;inset:-2px;border-radius:14px;background:linear-gradient(45deg,transparent,rgba(255,255,255,.2),transparent);animation:mt-shine 2s ease infinite}
 .mt-text{position:relative;z-index:1}
+.mt-sub{font-size:11px;opacity:.8;font-weight:400}
+.memory-toast.achievement{background:linear-gradient(135deg,rgba(0,212,123,.95),rgba(77,159,255,.9));box-shadow:0 8px 32px rgba(0,212,123,.4),0 0 60px rgba(0,212,123,.15)}
 @keyframes mt-shine{0%{opacity:0;transform:translateX(-100%)}50%{opacity:1}100%{opacity:0;transform:translateX(100%)}}
 
 ::-webkit-scrollbar{width:5px}

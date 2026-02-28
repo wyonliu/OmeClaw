@@ -14,6 +14,7 @@ export interface GatewayAdapter {
   init(): Promise<void>;
   handleWebhook?(req: IncomingMessage, res: ServerResponse): Promise<boolean>;
   sendMessage(chatId: string, text: string): Promise<void>;
+  broadcast?(text: string): Promise<void>;
 }
 
 export type OnMessage = (msg: GatewayMessage) => Promise<string>;

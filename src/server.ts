@@ -3,8 +3,8 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { resolve, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Config } from "./config.js";
-import { listAgents, routeAgent, runAgent, initAgentBus, agentEvents } from "./agent.js";
-import { initMemory, getMessageCount, searchMemory, getRecentMessages, getHistoryForSession, getMergedHistory, getUserFacts, getUserFactCount } from "./memory.js";
+import { listAgents, routeAgent, runAgent, initAgentBus, agentEvents, startHeartbeat, getReminders } from "./agent.js";
+import { initMemory, getMessageCount, searchMemory, getRecentMessages, getHistoryForSession, getMergedHistory, getUserFacts, getUserFactCount, getMessagesSince } from "./memory.js";
 import { bus } from "./bus.js";
 import { listTools } from "./tools.js";
 import { createLarkAdapter } from "./gateway/lark.js";
@@ -101,6 +101,24 @@ export function startServer(config: Config, port: number, configPath?: string) {
   if (dc) { registerGateway(dc); dc.init(); }
 
   startScheduler(config);
+  startHeartbeat(config, 3600_000);
+
+  // 提醒到时回调：发给用户
+  agentEvents.on("reminder", async (d: { id: string; message: string; agentId: string }) => {
+    const text = `⏰ 提醒: ${d.message}`;
+    logActivity("system", d.agentId, text);
+    logEvolution("reminder", `提醒触发 · ${d.message}`, "⏰");
+    // 通过所有网关推送
+    for (const gw of allGateways()) {
+      try { await gw.broadcast?.(text); } catch {}
+    }
+  });
+
+  // 自进化心跳洞察
+  agentEvents.on("evolution", (d: { type: string; detail: string; emoji: string }) => {
+    logEvolution(d.type, d.detail, d.emoji);
+    logActivity("system", "heartbeat", `💡 进化洞察: ${d.detail}`);
+  });
 
   const webDir = existsSync(resolve(__dir, "web")) ? resolve(__dir, "web") : resolve(process.cwd(), "web");
 
@@ -211,16 +229,16 @@ export function startServer(config: Config, port: number, configPath?: string) {
       const facts = getUserFacts();
 
       const categories = [
-        { id: "gene", name: "基因层", icon: "🧬", keys: ["生日","属相","星座","血型","八字","出生地","籍贯"] },
-        { id: "personality", name: "人格层", icon: "🎭", keys: ["姓名","名字","MBTI","九型","大五","核心特质","自我认知","人生信条"] },
-        { id: "character", name: "性格层", icon: "🧠", keys: ["内向","外向","理性","感性","决策","沟通","情绪"] },
-        { id: "likes", name: "爱好层", icon: "❤️", keys: ["喜欢","讨厌","食物","音乐","电影","书","运动","旅行","收藏"] },
-        { id: "skill", name: "技能层", icon: "⚡", keys: ["擅长","专业","技能","语言","特长"] },
-        { id: "expression", name: "表现层", icon: "💬", keys: ["口头禅","习惯","作息","近期状态"] },
-        { id: "people", name: "关系层", icon: "👥", keys: ["家人","父母","伴侣","朋友","同事","重要的人"] },
-        { id: "moments", name: "经历层", icon: "📌", keys: ["纪念日","转折","难忘","成就","经历"] },
-        { id: "goals", name: "目标层", icon: "🎯", keys: ["目标","计划","理想","焦虑","在忙","项目"] },
-        { id: "emotion", name: "情感层", icon: "💭", keys: ["心情","情绪","压力","开心","烦","累","状态"] },
+        { id: "gene", name: "基因层", icon: "🧬", keys: ["生日","属相","星座","血型","八字","出生地","籍贯","年龄"] },
+        { id: "personality", name: "人格层", icon: "🎭", keys: ["姓名","名字","MBTI","九型","大五","核心特质","自我认知","人生信条","价值观"] },
+        { id: "character", name: "性格层", icon: "🧠", keys: ["内向","外向","理性","感性","决策","沟通","沟通风格","情绪基调","性格"] },
+        { id: "likes", name: "爱好层", icon: "❤️", keys: ["喜欢","讨厌","食物","音乐","电影","书","运动","旅行","收藏","笑点","偏好"] },
+        { id: "skill", name: "技能层", icon: "⚡", keys: ["擅长","专业","技能","语言","特长","工作"] },
+        { id: "expression", name: "表现层", icon: "💬", keys: ["口头禅","习惯","作息","近期状态","休息偏好","近期关注"] },
+        { id: "people", name: "关系层", icon: "👥", keys: ["家人","父母","伴侣","朋友","同事","重要的人","宠物"] },
+        { id: "moments", name: "经历层", icon: "📌", keys: ["纪念日","转折","难忘","成就","经历","遗憾"] },
+        { id: "goals", name: "目标层", icon: "🎯", keys: ["目标","计划","理想","焦虑","在忙","项目","梦想"] },
+        { id: "emotion", name: "情感层", icon: "💭", keys: ["心情","情绪","压力","开心","烦","累","状态","近期情绪","情绪变化"] },
         { id: "meta", name: "玄学层", icon: "🔮", keys: ["命理","五行","运势","玄学"] },
       ];
 
@@ -260,16 +278,16 @@ export function startServer(config: Config, port: number, configPath?: string) {
       const defaultAgentName = (() => { const a = listAgents(config).find(x => x.role === "orchestrator") || listAgents(config)[0]; return a?.name ?? "Ome"; })();
       const totalCategories = 11;
       const catKeys = [
-        ["生日","属相","星座","血型","八字","出生地"],
-        ["MBTI","九型","大五","核心特质","信条"],
-        ["内向","外向","理性","感性","决策","沟通"],
-        ["喜欢","讨厌","食物","音乐","电影","运动","旅行"],
-        ["擅长","专业","技能","语言","特长"],
-        ["口头禅","习惯","作息","近期状态"],
-        ["家人","伴侣","朋友","同事"],
-        ["纪念日","转折","难忘","成就","经历"],
+        ["生日","属相","星座","血型","八字","出生地","年龄"],
+        ["MBTI","九型","大五","核心特质","信条","价值观"],
+        ["内向","外向","理性","感性","决策","沟通","沟通风格","性格"],
+        ["喜欢","讨厌","食物","音乐","电影","运动","旅行","笑点","偏好"],
+        ["擅长","专业","技能","语言","特长","工作"],
+        ["口头禅","习惯","作息","近期状态","休息偏好","近期关注"],
+        ["家人","伴侣","朋友","同事","宠物"],
+        ["纪念日","转折","难忘","成就","经历","遗憾"],
         ["目标","计划","梦想","焦虑","在忙"],
-        ["心情","情绪","压力","开心","烦","累"],
+        ["心情","情绪","压力","开心","烦","累","近期情绪","情绪变化"],
         ["命理","五行","运势"],
       ];
       const filledCategories = catKeys.filter(keys => facts.some(f => keys.some(k => f.key.includes(k)))).length;
@@ -290,6 +308,16 @@ export function startServer(config: Config, port: number, configPath?: string) {
         completeness, filledCategories, totalCategories,
         xp, currentMilestone, nextMilestone, progressToNext,
       });
+    }
+
+    if (url.startsWith("/api/chat/poll") && method === "GET") {
+      const sinceId = Number(new URL(fullUrl, "http://localhost").searchParams.get("since") ?? "0");
+      const newMsgs = getMessagesSince(sinceId);
+      return json(res, { messages: newMsgs, latestId: newMsgs.length ? newMsgs[newMsgs.length - 1].id : sinceId });
+    }
+
+    if (url === "/api/reminders" && method === "GET") {
+      return json(res, { reminders: getReminders() });
     }
 
     if (url.startsWith("/api/chat/history") && method === "GET") {

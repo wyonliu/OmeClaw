@@ -1,6 +1,6 @@
 const $=s=>document.querySelector(s),$$=s=>document.querySelectorAll(s);
 const CHAT_SESSION="owner";
-let curAgent="",agents=[],pendingChats=0;
+let curAgent="",agents=[],pendingChats=0,lastMsgId=0;
 
 // ─── UTILS ───
 function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
@@ -14,7 +14,7 @@ function formatMsg(text){
 }
 function timeFmt(t){return new Date(typeof t==="number"&&t<1e12?t*1000:t).toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false})}
 
-// ─── NAVIGATION ─── 支持刷新后恢复当前页
+// ─── NAVIGATION ───
 function switchView(name){
   $$(".nav-btn").forEach(x=>x.classList.remove("active"));
   $$(`.nav-btn[data-view="${name}"]`).forEach(x=>x.classList.add("active"));
@@ -76,7 +76,7 @@ async function loadStatus(){
     const d=await(await fetch("/api/status")).json();setConn(true);
     loadEvolution();
     const fmt=s=>s<60?`${Math.floor(s)}s`:s<3600?`${Math.floor(s/60)}m ${Math.floor(s%60)}s`:`${Math.floor(s/3600)}h ${Math.floor(s%3600/60)}m`;
-    const agents=d.agents||[];
+    const ag=d.agents||[];
     const gw=d.gateways?.length?d.gateways.join(", "):"Web";
     $("#status-grid").innerHTML=`
       <div class="status-hero">
@@ -84,8 +84,8 @@ async function loadStatus(){
         <div class="status-uptime">已运行 ${fmt(d.uptime)}</div>
       </div>
       <div class="status-section">
-        <div class="status-section-title">分身体</div>
-        <div class="status-agents">${agents.map(a=>`<div class="status-agent"><span class="agent-role-dot ${a.role}"></span><span>${esc(a.name)}</span><span class="agent-id">${esc(a.id)}</span></div>`).join("")}</div>
+        <div class="status-section-title">分身体 (${ag.length})</div>
+        <div class="status-agents">${ag.map(a=>`<div class="status-agent"><span class="agent-role-dot ${a.role}"></span><span>${esc(a.name)}</span><span class="agent-id">${esc(a.id)}</span></div>`).join("")}</div>
       </div>
       <div class="status-section">
         <div class="status-section-title">通道</div>
@@ -112,7 +112,7 @@ async function loadEvolution(){
   }catch(e){console.error("loadEvolution:",e);}
 }
 
-// ─── ACTIVITY ── 系统日志 ───
+// ─── ACTIVITY ───
 const LOG_META={
   user_in:{icon:"📨",label:"用户",cls:"tl-user"},
   agent_out:{icon:"🤖",label:"回复",cls:"tl-agent"},
@@ -154,17 +154,13 @@ function thinkingHtml(name){
   return `<span class="agent-tag">${esc(name)}</span><div class="thinking"><span></span><span></span><span></span></div>`;
 }
 
-// 加载聊天历史 — 只在拿到数据后才替换内容
 async function loadChatHistory(){
   try{
     const resp=await fetch(`/api/chat/history?merged=1`);
     const {messages}=await resp.json();
     const container=$("#messages");
     if(!messages||!messages.length){
-      // 没有历史，只在容器为空时显示欢迎
       if(!container.children.length||container.querySelector(".welcome-msg")){
-        const a=agents.find(x=>x.id===curAgent);
-        const name=a?.name||"Ome";
         container.innerHTML=`<div class="welcome-msg">
           <div class="welcome-icon">🪼</div>
           <h3>嘿 👋</h3>
@@ -178,7 +174,6 @@ async function loadChatHistory(){
       }
       return;
     }
-    // 有历史消息：渲染
     let html="";
     for(const m of messages){
       const agent=m.agent_id||"";
@@ -187,8 +182,30 @@ async function loadChatHistory(){
     }
     container.innerHTML=html;
     container.scrollTop=container.scrollHeight;
+    // 记录最新 ID 用于轮询
+    if(messages.length) lastMsgId=messages[messages.length-1].id||0;
   }catch(e){console.error("loadChatHistory:",e);}
 }
+
+// ─── 消息轮询：飞书消息实时同步 ───
+async function pollNewMessages(){
+  if(!document.querySelector("#view-chat.active"))return;
+  try{
+    const resp=await fetch(`/api/chat/poll?since=${lastMsgId}`);
+    const data=await resp.json();
+    if(!data.messages?.length)return;
+    const container=$("#messages");
+    // 移除欢迎页
+    const welcome=container.querySelector(".welcome-msg");
+    if(welcome)welcome.remove();
+    for(const m of data.messages){
+      if(m.role==="user") addMsg("user",esc(m.content));
+      else addMsg("assistant",`${m.agent_id?`<span class="agent-tag">${esc(m.agent_id)}</span>`:""}${formatMsg(m.content)}`);
+    }
+    lastMsgId=data.latestId||lastMsgId;
+  }catch{}
+}
+setInterval(pollNewMessages,3000);
 
 // ─── CHAT SUBMIT ───
 $("#chat-form").addEventListener("submit",e=>{
@@ -197,7 +214,6 @@ $("#chat-form").addEventListener("submit",e=>{
   if(!text)return;
   inp.value="";inp.focus();
 
-  // 清除欢迎页
   const welcome=$("#messages .welcome-msg");
   if(welcome)welcome.remove();
 
@@ -224,7 +240,7 @@ $("#chat-form").addEventListener("submit",e=>{
     ld.innerHTML=`<span class="agent-tag error-tag">Error</span>${esc(err.message)}`;
     ld.classList.remove("loading");ld.classList.add("error");
   })
-  .finally(()=>{pendingChats--;updatePending();loadBond();loadAgents();setTimeout(checkMemoryUpdate,800);setTimeout(loadAgents,1500);setTimeout(loadAgents,3500);});
+  .finally(()=>{pendingChats--;updatePending();loadBond();loadAgents();setTimeout(checkMemoryUpdate,800);setTimeout(loadAgents,1500);});
 });
 function updatePending(){
   $("#send-btn").textContent=pendingChats>0?`发送 (${pendingChats})`:"发送";
@@ -252,7 +268,7 @@ $("#confirm-create").addEventListener("click",async()=>{
   finally{btn.disabled=false;btn.textContent="创建";}
 });
 
-// ─── MEMORY ── 人本模型 ───
+// ─── MEMORY ───
 async function loadMemory(){
   const q=$("#mem-q")?.value?.trim();
   if(q)return searchMemory(q);
@@ -340,8 +356,38 @@ function showToast(msg,type="info"){
   setTimeout(()=>{t.classList.remove("show");setTimeout(()=>t.remove(),300);},3000);
 }
 
-// ─── MEMORY UPDATE CELEBRATION ───
+// ─── MEMORY UPDATE + ACHIEVEMENTS ───
 let lastFactCount=0;
+const ACHIEVEMENTS=[
+  {id:"first_memory",name:"初次记忆",desc:"第一条记忆写入",threshold:1,emoji:"🌱",xp:10},
+  {id:"five_facts",name:"初识",desc:"记住5件事",threshold:5,emoji:"🪼",xp:30},
+  {id:"ten_facts",name:"渐熟",desc:"记住10件事",threshold:10,emoji:"💙",xp:50},
+  {id:"twenty_facts",name:"知己",desc:"记住20件事",threshold:20,emoji:"💎",xp:100},
+  {id:"fifty_facts",name:"灵魂伴侣",desc:"记住50件事",threshold:50,emoji:"🌊",xp:200},
+];
+let unlockedAchievements=JSON.parse(localStorage.getItem("omeclaw_achievements")||"[]");
+
+function checkAchievements(count){
+  for(const a of ACHIEVEMENTS){
+    if(count>=a.threshold&&!unlockedAchievements.includes(a.id)){
+      unlockedAchievements.push(a.id);
+      localStorage.setItem("omeclaw_achievements",JSON.stringify(unlockedAchievements));
+      showAchievement(a);
+    }
+  }
+}
+
+function showAchievement(a){
+  const container=document.getElementById("memory-toast-container");
+  if(!container)return;
+  const el=document.createElement("div");
+  el.className="memory-toast achievement";
+  el.innerHTML=`<div class="mt-glow"></div><div class="mt-text">${a.emoji} 成就解锁: ${a.name}<br><span class="mt-sub">${a.desc} · +${a.xp}XP</span></div>`;
+  container.appendChild(el);
+  requestAnimationFrame(()=>el.classList.add("mt-show"));
+  setTimeout(()=>{el.classList.remove("mt-show");setTimeout(()=>el.remove(),500);},5000);
+}
+
 function showMemoryToast(diff){
   const container=document.getElementById("memory-toast-container");
   if(!container)return;
@@ -366,6 +412,7 @@ async function checkMemoryUpdate(){
     const count=d.factCount||0;
     if(lastFactCount>0&&count>lastFactCount){
       showMemoryToast(count-lastFactCount);
+      checkAchievements(count);
     }
     lastFactCount=count;
   }catch{}
@@ -397,11 +444,13 @@ async function loadBond(){
     if(nameEl)nameEl.textContent=d.myName||"还没名字";
     if(emojiEl)emojiEl.textContent=d.emoji||"🫧";
     const next=d.nextMilestone?` → ${d.nextMilestone.emoji} ${d.nextMilestone.name}`:"";
-    if(levelEl)levelEl.innerHTML=`<span class="bond-level-text">${d.level}</span><span class="bond-stats">${d.factCount}条 · ${d.completeness||0}%</span>${next?"<span class=\"bond-next\">"+next+"</span>":""}`;
+    if(levelEl)levelEl.innerHTML=`<span class="bond-level-text">${d.level}</span><span class="bond-stats">${d.factCount}条 · ${d.xp||0}XP · ${d.completeness||0}%</span>${next?"<span class=\"bond-next\">"+next+"</span>":""}`;
     if(progressEl){
       const pct=d.progressToNext??0;
       progressEl.innerHTML=`<div class="bond-progress-bar"><div class="bond-progress-fill" style="width:${pct}%"></div></div>`;
     }
+    lastFactCount=d.factCount||0;
+    checkAchievements(lastFactCount);
   }catch(e){console.error("loadBond:",e);}
 }
 
