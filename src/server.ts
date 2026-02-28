@@ -1,10 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { resolve, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Config } from "./config.js";
 import { listAgents, routeAgent, runAgent, initAgentBus, agentEvents } from "./agent.js";
-import { initMemory, getMessageCount, searchMemory, getRecentMessages } from "./memory.js";
+import { initMemory, getMessageCount, searchMemory, getRecentMessages, getHistoryForSession } from "./memory.js";
 import { bus } from "./bus.js";
 import { listTools } from "./tools.js";
 import { createLarkAdapter } from "./gateway/lark.js";
@@ -19,10 +19,11 @@ const MIME: Record<string, string> = {
   ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png",
 };
 
-interface ActivityLog { time: number; type: string; agent: string; detail: string }
+interface ActivityLog { time: number; type: string; agent: string; detail: string; reqId?: string }
 const activityLog: ActivityLog[] = [];
-function logActivity(type: string, agent: string, detail: string) {
-  activityLog.push({ time: Date.now(), type, agent, detail });
+let nextReqId = 0;
+function logActivity(type: string, agent: string, detail: string, reqId?: string) {
+  activityLog.push({ time: Date.now(), type, agent, detail, reqId });
   if (activityLog.length > 500) activityLog.splice(0, 250);
 }
 
@@ -34,20 +35,25 @@ function collectBody(req: IncomingMessage): Promise<string> {
   return new Promise((ok, fail) => { let b = ""; req.on("data", c => b += c); req.on("end", () => ok(b)); req.on("error", fail); });
 }
 
-export function startServer(config: Config, port: number, _configPath?: string) {
+export function startServer(config: Config, port: number, configPath?: string) {
   const dataDir = resolve(process.cwd(), config.memory?.dataDir ?? ".omeclaw");
   initMemory(dataDir);
   initAgentBus(config);
 
-  agentEvents.on("tool_call", (d: any) => logActivity("tool_call", d.agentId, `${d.tool}(${JSON.stringify(d.args).slice(0, 100)})`));
-  agentEvents.on("tool_result", (d: any) => logActivity("tool_result", d.agentId, `${d.tool} → ${d.result}`));
+  let activeReqId = "";
+  agentEvents.on("tool_call", (d: any) => logActivity("tool_call", d.agentId, `${d.tool}(${JSON.stringify(d.args).slice(0, 100)})`, activeReqId || undefined));
+  agentEvents.on("tool_result", (d: any) => logActivity("tool_result", d.agentId, `${d.tool} → ${d.result}`, activeReqId || undefined));
 
   const onMessage = async (msg: GatewayMessage) => {
-    logActivity("gateway_msg", msg.gateway, `${msg.senderName ?? msg.senderId}: ${msg.text.slice(0, 80)}`);
-    const { agentId, cleanText } = routeAgent(config, msg.text);
-    const reply = await runAgent(config, `${msg.gateway}:${msg.senderId}`, agentId, cleanText);
-    logActivity("gateway_reply", agentId, reply.slice(0, 100));
-    return reply;
+    const reqId = `r${++nextReqId}`;
+    activeReqId = reqId;
+    logActivity("gateway_msg", msg.gateway, `${msg.senderName ?? msg.senderId}: ${msg.text.slice(0, 80)}`, reqId);
+    try {
+      const { agentId, cleanText } = routeAgent(config, msg.text);
+      const reply = await runAgent(config, `${msg.gateway}:${msg.senderId}`, agentId, cleanText);
+      logActivity("gateway_reply", agentId, reply.slice(0, 150), reqId);
+      return reply;
+    } finally { activeReqId = ""; }
   };
 
   const lark = createLarkAdapter(config, onMessage);
@@ -115,6 +121,17 @@ export function startServer(config: Config, port: number, _configPath?: string) 
         });
         logActivity("agent_created", id, `${name} (${role ?? "worker"})`);
         console.log(`[server] Agent created: ${id} → ${name} [${role}] model=${model}`);
+
+        if (configPath && existsSync(configPath)) {
+          try {
+            const { parse: parseYaml, stringify: stringifyYaml } = await import("yaml");
+            const raw = readFileSync(configPath, "utf-8");
+            const parsed = parseYaml(raw) || {};
+            if (!parsed.agents) parsed.agents = {};
+            parsed.agents[id] = { name, model, systemPrompt: systemPrompt || "You are a helpful assistant.", role: role || "worker", tools: tools || [] };
+            writeFileSync(configPath, stringifyYaml(parsed, { lineWidth: 0 }), "utf-8");
+          } catch (e: any) { console.warn("[server] Failed to persist agent to config:", e.message); }
+        }
         return json(res, { ok: true, agent: { id, ...config.agents[id] } });
       } catch (e: any) { return json(res, { error: e.message }, 500); }
     }
@@ -144,6 +161,15 @@ export function startServer(config: Config, port: number, _configPath?: string) 
       return json(res, { results: searchMemory(q, undefined, 20) });
     }
 
+    if (url.startsWith("/api/chat/history") && method === "GET") {
+      const params = new URL(fullUrl, "http://localhost").searchParams;
+      const sessionId = params.get("sessionId") ?? "";
+      const agentId = params.get("agentId")?.trim() || undefined;
+      if (!sessionId) return json(res, { messages: [] });
+      const key = `web:${sessionId}`;
+      return json(res, { messages: getHistoryForSession(key, agentId, 50) });
+    }
+
     if (url === "/api/chat" && method === "POST") {
       try {
         const body = JSON.parse(await collectBody(req));
@@ -163,10 +189,14 @@ export function startServer(config: Config, port: number, _configPath?: string) 
           cleanText = routed.cleanText;
         }
 
-        logActivity("web_chat", agentId, msg.slice(0, 80));
-        const reply = await runAgent(config, `web:${body.sessionId ?? "default"}`, agentId, cleanText);
-        logActivity("web_reply", agentId, reply.slice(0, 100));
-        return json(res, { reply, agentId });
+        const reqId = `r${++nextReqId}`;
+        activeReqId = reqId;
+        logActivity("web_chat", agentId, msg.slice(0, 80), reqId);
+        try {
+          const reply = await runAgent(config, `web:${body.sessionId ?? "default"}`, agentId, cleanText);
+          logActivity("web_reply", agentId, reply.slice(0, 150), reqId);
+          return json(res, { reply, agentId });
+        } finally { activeReqId = ""; }
       } catch (e: any) { return json(res, { error: e.message }, 500); }
     }
 
@@ -183,7 +213,7 @@ export function startServer(config: Config, port: number, _configPath?: string) 
   });
 
   server.listen(port, () => {
-    console.log(`\n  ⭕▸ OmeClaw v0.4.0 — Agent Operating System`);
+    console.log(`\n  🦞 OmeClaw v0.4.0 — Agent Operating System`);
     console.log(`  ──────────────────────────────────────────`);
     console.log(`  📊 Dashboard:   http://localhost:${port}`);
     console.log(`  🔌 API:         http://localhost:${port}/api/status`);

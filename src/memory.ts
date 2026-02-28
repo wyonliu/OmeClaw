@@ -125,6 +125,29 @@ export function getRecentMessages(limit = 50): Array<{ session_key: string; agen
   ).all(limit) as any[];
 }
 
+export function getHistoryForSession(sessionKey: string, agentId?: string, limit = 50): Array<{ role: string; content: string; agent_id: string; created_at: number }> {
+  const sql = agentId
+    ? "SELECT role, content, agent_id, created_at FROM messages WHERE session_key = ? AND agent_id = ? ORDER BY id ASC LIMIT ?"
+    : "SELECT role, content, agent_id, created_at FROM messages WHERE session_key = ? ORDER BY id ASC LIMIT ?";
+  const args = agentId ? [sessionKey, agentId, limit] : [sessionKey, limit];
+  return db.prepare(sql).all(...args) as any[];
+}
+
+const USER_FACTS_PREFIX = "user:";
+export function getUserFacts(sessionKey: string): Array<{ key: string; value: string }> {
+  const scope = USER_FACTS_PREFIX + sessionKey.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+  return db.prepare("SELECT key, value FROM knowledge WHERE agent_id = ? ORDER BY updated_at DESC").all(scope) as any[];
+}
+export function saveUserFact(sessionKey: string, key: string, value: string) {
+  const scope = USER_FACTS_PREFIX + sessionKey.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+  const existing = db.prepare("SELECT id FROM knowledge WHERE agent_id = ? AND key = ?").get(scope, key);
+  if (existing) {
+    db.prepare("UPDATE knowledge SET value = ?, updated_at = unixepoch() WHERE agent_id = ? AND key = ?").run(value, scope, key);
+  } else {
+    db.prepare("INSERT INTO knowledge (agent_id, key, value) VALUES (?, ?, ?)").run(scope, key, value);
+  }
+}
+
 export function closeMemory() {
   db?.close();
 }

@@ -1,5 +1,5 @@
 const $=s=>document.querySelector(s),$$=s=>document.querySelectorAll(s);
-const sid="w-"+Math.random().toString(36).slice(2,8);
+const sid=(()=>{let x=localStorage.getItem("omeclaw_sid");if(!x){x="w-"+Math.random().toString(36).slice(2,10);localStorage.setItem("omeclaw_sid",x);}return x;})();
 let curAgent="",agents=[],pendingChats=0;
 
 // Navigation
@@ -10,6 +10,7 @@ $$(".nav-btn").forEach(b=>{b.addEventListener("click",()=>{
   if(b.dataset.view==="status")loadStatus();
   if(b.dataset.view==="agents")loadAgents();
   if(b.dataset.view==="memory")loadMemory();
+  if(b.dataset.view==="chat")loadChatHistory();
 })});
 
 // Load agents
@@ -20,7 +21,7 @@ async function loadAgents(){
     sel.innerHTML=agents.map(a=>`<option value="${a.id}"${a.id===curAgent?" selected":""}>${a.name} [${a.role}]</option>`).join("");
     if(!curAgent||!agents.find(a=>a.id===curAgent))curAgent=agents[0]?.id??"";
     sel.value=curAgent;
-    sel.onchange=()=>{curAgent=sel.value;updateChatHeader();};
+    sel.onchange=()=>{curAgent=sel.value;updateChatHeader();loadChatHistory();};
     updateChatHeader();
     renderSidebar();
     renderAgentsGrid();
@@ -41,7 +42,7 @@ function renderSidebar(){
   sb.querySelectorAll(".agent-item").forEach(el=>{el.addEventListener("click",()=>{
     curAgent=el.dataset.id;$("#agent-select").value=curAgent;
     sb.querySelectorAll(".agent-item").forEach(x=>x.classList.remove("active"));el.classList.add("active");
-    updateChatHeader();switchView("chat");
+    updateChatHeader();loadChatHistory();switchView("chat");
   })});
 }
 
@@ -84,20 +85,54 @@ async function loadStatus(){
   }catch{setConn(false);}
 }
 
-// Activity
+// Activity — 按 reqId 分组 + 未分组事件逐行展示
 async function loadActivity(){
+  const el=$("#activity-log");
   try{
     const{logs}=await(await fetch("/api/activity")).json();
-    const el=$("#activity-log");
-    el.innerHTML=logs.length?logs.slice().reverse().map(l=>{
-      const t=new Date(l.time).toLocaleString("zh-CN",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false});
-      const tc=l.type.replace(/_/g,"-");
-      return `<div class="act-row"><span class="act-time">${t}</span><span class="act-type ${tc}">${l.type}</span><span class="act-agent">${l.agent}</span><span class="act-detail">${esc(l.detail)}</span></div>`;
-    }).join(""):`<p class="empty-msg">No activity yet</p>`;
-  }catch{}
+    if(!logs||!logs.length){el.innerHTML=`<p class="empty-msg">暂无活动记录</p>`;return;}
+    const byReq=new Map();
+    const ungrouped=[];
+    for(const l of logs){
+      if(l.reqId){
+        if(!byReq.has(l.reqId))byReq.set(l.reqId,[]);
+        byReq.get(l.reqId).push(l);
+      }else ungrouped.push(l);
+    }
+    const fmt=t=>new Date(t).toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false});
+    const groups=[];
+    for(const [rid,arr] of byReq){
+      arr.sort((a,b)=>a.time-b.time);
+      const req=arr.find(x=>x.type==="web_chat"||x.type==="gateway_msg");
+      const reply=arr.find(x=>x.type==="web_reply"||x.type==="gateway_reply");
+      const tools=arr.filter(x=>x.type==="tool_call"||x.type==="tool_result");
+      groups.push({req,reply,tools,time:req?.time??arr[0].time});
+    }
+    groups.sort((a,b)=>b.time-a.time);
+    let html=groups.map(g=>{
+      const req=g.req;
+      const reply=g.reply;
+      const src=req?.type==="gateway_msg"?"飞书":"Web";
+      const reqShort=req?.detail?.slice(0,100)??"-";
+      const replyShort=reply?.detail?.slice(0,200)??`<span style="color:var(--text2)">等待回复...</span>`;
+      const toolsHtml=g.tools.length?`<div class="act-tools">${g.tools.map(t=>`<span class="act-tool ${t.type}">${esc(t.type==="tool_call"?(t.detail||"").replace(/\(.*/,""):"→ "+(t.detail||"").slice(0,60))}</span>`).join(" ")}</div>`:"";
+      return `<div class="act-group">
+        <div class="act-group-header"><span class="act-src">${esc(src)}</span><span class="act-agent">${esc(req?.agent||reply?.agent||"")}</span><span class="act-time">${fmt(g.time)}</span></div>
+        <div class="act-req"><strong>问</strong> ${esc(reqShort)}</div>
+        ${toolsHtml}
+        <div class="act-reply"><strong>答</strong> ${reply?esc(replyShort):replyShort}</div>
+      </div>`;
+    }).join("");
+    if(ungrouped.length){
+      html+=`<div style="margin-top:12px"><div class="section-title">其他事件</div>`;
+      html+=ungrouped.slice(-30).reverse().map(l=>`<div class="act-row"><span class="act-time">${fmt(l.time)}</span><span class="act-type ${l.type.replace(/_/g,"-")}">${l.type}</span><span class="act-agent">${esc(l.agent)}</span><span class="act-detail">${esc((l.detail||"").slice(0,120))}</span></div>`).join("");
+      html+=`</div>`;
+    }
+    el.innerHTML=html;
+  }catch(e){el.innerHTML=`<p class="empty-msg">加载失败: ${esc(String(e))}</p>`;}
 }
 
-// ─── CHAT (fully async, non-blocking) ───
+// ─── CHAT ───
 function esc(s){return String(s).replace(/</g,"&lt;").replace(/>/g,"&gt;")}
 function formatMsg(text){
   let s=esc(text);
@@ -108,16 +143,46 @@ function formatMsg(text){
   return s;
 }
 
-function addMsg(role,html){
+function addMsg(role,html,prepend){
   const d=document.createElement("div");d.className=`msg ${role}`;
   d.innerHTML=html;
-  $("#messages").appendChild(d);
-  $("#messages").scrollTop=$("#messages").scrollHeight;
+  if(prepend)$("#messages").insertBefore(d,$("#messages").firstChild);
+  else{$("#messages").appendChild(d);$("#messages").scrollTop=$("#messages").scrollHeight;}
   return d;
 }
 
 function thinkingHtml(name){
   return `<span class="agent-tag">${esc(name)}</span><div class="thinking"><span></span><span></span><span></span></div>`;
+}
+
+async function loadChatHistory(){
+  try{
+    const url=`/api/chat/history?sessionId=${encodeURIComponent(sid)}${curAgent?`&agentId=${encodeURIComponent(curAgent)}`:""}`;
+    const {messages}=await(await fetch(url)).json();
+    const container=$("#messages");container.innerHTML="";
+    if(!messages||!messages.length){
+      const a=agents.find(x=>x.id===curAgent);
+      const name=a?.name||"Ome";
+      container.innerHTML=`<div class="welcome-msg">
+        <div class="welcome-icon">🦞</div>
+        <h3>你好，我是 ${esc(name)}</h3>
+        <p>我是你的 AI 分身，会记住你说的每一件重要的事。<br>
+        你可以给我起个名字，告诉我怎么称呼你，我会越来越懂你。</p>
+        <div class="welcome-tips">
+          <span>💡 试试说：叫你小O</span>
+          <span>💡 试试说：叫我老板</span>
+          <span>💡 试试说：我喜欢...</span>
+        </div>
+      </div>`;
+      return;
+    }
+    for(const m of messages){
+      const agent=m.agent_id||"";
+      if(m.role==="user")addMsg("user",esc(m.content),false);
+      else addMsg("assistant",`${agent?`<span class="agent-tag">${esc(agent)}</span>`:""}${formatMsg(m.content)}`,false);
+    }
+    container.scrollTop=container.scrollHeight;
+  }catch(e){console.error("loadChatHistory:",e);}
 }
 
 // Non-blocking chat submit
@@ -137,7 +202,6 @@ $("#chat-form").addEventListener("submit",e=>{
   pendingChats++;
   updatePending();
 
-  // Fire and forget — UI stays responsive
   fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({message:text,sessionId:sid,agentId})})
   .then(r=>r.json())
@@ -160,7 +224,7 @@ $("#chat-form").addEventListener("submit",e=>{
 
 function updatePending(){
   const btn=$("#send-btn");
-  btn.textContent=pendingChats>0?`发送 (${pendingChats}处理中)`:"发送";
+  btn.textContent=pendingChats>0?`发送 (${pendingChats})`:"发送";
 }
 
 // ─── CREATE AGENT ───
@@ -177,7 +241,7 @@ $("#confirm-create").addEventListener("click",async()=>{
     const r=await(await fetch("/api/agents",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json();
     if(r.ok){
       $("#create-modal").style.display="none";
-      showToast(`Agent "${body.name}" 创建成功`,"success");
+      showToast(`Agent "${body.name}" 创建成功，已持久化到 config.yaml`,"success");
       await loadAgents();
       $("#new-id").value="";$("#new-name").value="";$("#new-prompt").value="";$("#new-tools").value="";
     }else showToast(r.error||"创建失败","error");
@@ -189,7 +253,6 @@ $("#confirm-create").addEventListener("click",async()=>{
 async function loadMemory(){
   const q=$("#mem-q")?.value?.trim();
   if(q)return searchMemory(q);
-  // Default: show recent messages
   try{
     const{messages}=await(await fetch("/api/memory/recent")).json();
     renderMemory(messages,`最近 ${messages.length} 条记忆`);
@@ -234,17 +297,23 @@ function showToast(msg,type="info"){
   setTimeout(()=>{t.classList.remove("show");setTimeout(()=>t.remove(),300);},3000);
 }
 
-// ─── KEYBOARD ───
+document.addEventListener("click",e=>{
+  if(e.target.closest&&e.target.closest(".welcome-tips span")){
+    const text=e.target.textContent.replace(/^[^\s]+\s/,"");
+    $("#chat-input").value=text;
+    $("#chat-input").focus();
+  }
+});
 document.addEventListener("keydown",e=>{
   if(e.key==="/"&&!["INPUT","TEXTAREA","SELECT"].includes(document.activeElement?.tagName??"")){
     e.preventDefault();$("#chat-input").focus();
   }
 });
 
-// ─── REFRESH ───
 $("#refresh-activity")?.addEventListener("click",loadActivity);
 setInterval(()=>{if(document.querySelector("#view-activity.active"))loadActivity();},5000);
 setInterval(loadStatus,15000);
 
 // ─── INIT ───
-loadAgents();loadStatus();
+loadStatus();
+loadAgents().then(()=>loadChatHistory());

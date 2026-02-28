@@ -4,61 +4,30 @@
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License">
 </p>
 
-<h1 align="center">⭕▸ OmeClaw</h1>
+<h1 align="center">🦞 OmeClaw</h1>
 
 <p align="center">
-  <strong>Agent Operating System</strong> — 多智能体编排 · 任意模型 · 无限记忆 · 可插拔网关
+  <strong>你的 AI 分身，越用越懂你</strong>
 </p>
 
 <p align="center">
-  一键创建你的 AI 分身，支持飞书/Telegram/Discord，无需 Docker
+  持久记忆 · 人本模型 · 养成式陪伴 · 多智能体编排 · 飞书/Telegram/Discord/Web
 </p>
 
 ---
 
-## 📊 与同类项目对比
-
-| 维度 | OpenClaw | NanoClaw | OpenFang | ZeroClaw | **OmeClaw** |
-|------|----------|----------|----------|----------|-------------|
-| **GitHub Stars** | ~238K | ~16K | 新项目 | ~21K | 新项目 |
-| **代码规模** | 50万行 | ~500行 | 13.7万行 Rust | ~3万行 Rust | **~1400行 TS** |
-| **语言** | TypeScript | Python | Rust | Rust | **TypeScript** |
-| **多智能体编排** | ❌ | Agent Swarms | 30+ 预设 Agent | ❌ | **✅ Agent0 + delegate** |
-| **模型** | Claude 为主 | Claude | 26 提供商 | 22 提供商 | **任意 OpenAI 兼容** |
-| **中国网关** | ❌ | WhatsApp | 40 通道 | 多通道 | **✅ 飞书 WebSocket** |
-| **记忆** | Markdown 文件 | 基础 | SQLite+向量 | SQLite FTS5 | **SQLite + 摘要压缩** |
-| **Docker** | 必需 | 需容器 | 单二进制 | 单二进制 | **❌ 零依赖** |
-| **上手时间** | 分钟级 | 分钟级 | 需 Rust 生态 | 需 Rust 生态 | **秒级 `npx create`** |
-
-**OmeClaw 定位**：极简、可扩展、中国友好。不追求大而全，而是「够用且能长」—— 核心能力在 ~1400 行内实现，方便二次开发与社区贡献。
-
----
-
-## 🔮 能否爆火？还差什么？
-
-**客观评估**：短期内很难复制 OpenClaw 的 20 万星（84 天达成）—— 那背后有 Anthropic 背书、多语言多端生态、强运营和社区。OmeClaw 的差异点是**极简 + 中国场景**，更适合在细分市场积累用户和口碑。
-
-**要更接近爆款，建议补齐**：
-
-1. **视频 Demo + 一键部署**：一个 2 分钟 Demo 视频 + `npx omeclaw create && omeclaw start` 的流畅体验
-2. **飞书/企微开箱即用**：提供更详细的飞书配置向导，甚至考虑企微适配
-3. **MCP 桥接**：接入 Model Context Protocol，让工具生态与主流对齐
-4. **中文文档 + 案例**：从「AI 分身」「团队助手」等场景切入的完整教程
-5. **社区与运营**：Discord/微信群、示例项目合集、定期更新日志
-
----
-
-## ✨ 特点
+## ✨ 功能亮点
 
 | | OmeClaw |
 |---|---|
-| **多智能体** | Agent0 编排 + 专业子 Agent 委派 |
+| **养成式 AI 分身** | 给它起名字、设定称呼，它会记住你的一切，越来越懂你 |
+| **人本模型** | 五层理解：基础画像 → 兴趣偏好 → 价值观 → 情感状态 → 深层需求 |
+| **持久记忆** | SQLite 持久化、自动摘要压缩、跨会话用户画像 |
+| **多智能体** | Ome 编排 + 专业子 Agent 委派，用户只看到一个统一入口 |
 | **模型** | 任意 OpenAI 兼容 API（DeepSeek、Claude、GPT 等） |
-| **网关** | 飞书 · Telegram · Discord · Web 仪表盘 |
-| **记忆** | SQLite 持久化，自动压缩摘要 |
-| **工具** | 网络搜索、网页抓取、文件读写、Shell |
-| **中国友好** | 飞书 WebSocket 长连接，Bing 搜索，DeepSeek |
-| **轻量** | ~1400 行 TypeScript，零 Docker 依赖 |
+| **多端接入** | 飞书 WebSocket · Telegram · Discord · Web 仪表盘 |
+| **工具** | 搜索、网页抓取、文件读写、Shell、用户记忆 |
+| **轻量** | ~1500 行 TypeScript，零 Docker 依赖 |
 
 ---
 
@@ -104,27 +73,35 @@ src/
 
 ## 🔧 核心能力
 
-### Agent0 委派
+### Ome — 你的养成式 AI 分身
 
-Agent0 通过 **`delegate_to_agent` 工具**将任务委派给子 Agent，用户只看到最终整合回答：
+Ome 是 OmeClaw 的默认主 Agent，不是冷冰冰的工具，而是一个有温度、有记忆、会成长的数字伙伴：
+
+- **起名字**：告诉它「叫你小O」，它就永远记住自己叫小O
+- **设称呼**：告诉它「叫我老板」，以后每次对话都这么叫你
+- **记偏好**：它会主动用 `remember_about_user` 记录你透露的重要信息
+- **人本模型**：五层递进理解你 — 从基础画像到深层需求
+- **委派能力**：需要专业能力时自动委派给子 Agent
 
 ```yaml
 agents:
   agent0:
+    name: Ome
     role: orchestrator
-    systemPrompt: "你是用户的 AI 分身。直接回答或委派给专业 Agent。"
-    tools: [web_fetch, web_search, read_file, shell]  # 自动获得 delegate_to_agent
+    systemPrompt: |
+      你是用户的 AI 分身 Ome，一个有温度、有记忆、会成长的数字伙伴...
+    tools: [web_fetch, web_search, read_file, shell]
 
   assistant:
     role: worker
-    systemPrompt: "你是通用助手。"
+    systemPrompt: "你是一个有用的 AI 助手。"
     tools: [web_fetch, web_search]
 ```
 
 ### 飞书集成
 
 - **WebSocket 长连接**：无需 ngrok，本地即可接收消息
-- **即时反馈**：收到消息后立即发送「🤔 正在思考...」
+- **限流保护**：30 次/分钟/用户，事件去重，发件人白名单
 - 后台配置：事件与回调 → 使用长连接接收事件 → 订阅 `im.message.receive_v1`
 
 ### 内置工具
@@ -137,6 +114,38 @@ agents:
 | `write_file` | 写入文件 |
 | `list_dir` | 列出目录 |
 | `shell` | 执行命令 |
+| `remember_about_user` | 记录用户偏好/习惯/背景（自动注入后续会话） |
+
+---
+
+## 📋 最佳实践
+
+### 打造 24h 陪伴的 AI 分身
+
+1. **开箱即用**：`omeclaw create` 默认创建的 Ome 就是养成式分身，第一次对话会引导用户起名和设称呼
+2. **自动记忆**：对话中 Ome 会主动记录你的偏好、习惯、重要日期，无需手动配置
+3. **多端同步**：同一个 Ome 可同时接入飞书、Telegram、Web，记忆跨端共享
+4. **摘要压缩**：长对话自动压缩为摘要，节省 token 同时保留关键上下文
+5. **持久化**：聊天历史和智能体配置存于 SQLite + `config.yaml`，重启不丢失
+
+### 团队场景
+
+```yaml
+agents:
+  agent0:
+    role: orchestrator
+    tools: [web_fetch, web_search, read_file, shell]
+  coder:
+    role: specialist
+    systemPrompt: "你是代码专家..."
+    tools: [read_file, write_file, shell]
+  researcher:
+    role: specialist
+    systemPrompt: "你是研究员..."
+    tools: [web_search, web_fetch]
+```
+
+Agent0 会根据用户意图自动委派给合适的子 Agent。
 
 ---
 
@@ -149,6 +158,7 @@ agents:
 | `/api/chat` | POST | 与 Agent 对话 |
 | `/api/memory/recent` | GET | 近期记忆 |
 | `/api/memory/search?q=` | GET | 搜索记忆 |
+| `/api/chat/history?sessionId=&agentId=` | GET | 获取会话聊天历史 |
 | `/api/activity` | GET | 活动日志 |
 
 ---

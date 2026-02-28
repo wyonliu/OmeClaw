@@ -1,6 +1,6 @@
 import type { Config, AgentConfig } from "./config.js";
 import { chatWithTools, type Message, type ToolDef } from "./llm.js";
-import { saveMessage, getHistory, getSummaries, compactMemory, getAllKnowledge } from "./memory.js";
+import { saveMessage, getHistory, getSummaries, compactMemory, getAllKnowledge, getUserFacts, saveUserFact } from "./memory.js";
 import { bus, type AgentMessage } from "./bus.js";
 import { executeTool, getToolDefs } from "./tools.js";
 import { EventEmitter } from "node:events";
@@ -33,7 +33,8 @@ function resolveModel(config: Config, modelRef: string) {
 
 function buildSystemPrompt(
   agentCfg: AgentConfig, agentId: string, config: Config,
-  summaries: string[], knowledge: Array<{key: string; value: string}>
+  summaries: string[], knowledge: Array<{key: string; value: string}>,
+  sessionKey: string
 ): string {
   let sys = agentCfg.systemPrompt;
 
@@ -49,8 +50,40 @@ function buildSystemPrompt(
 
   if (summaries.length) sys += `\n\n[历史摘要]\n${summaries.join("\n---\n")}`;
   if (knowledge.length) sys += `\n\n[已知信息]\n${knowledge.map(k => `${k.key}: ${k.value}`).join("\n")}`;
+
+  const userFacts = getUserFacts(sessionKey);
+  if (userFacts.length) {
+    sys += `\n\n[关于用户]\n${userFacts.map(k => `${k.key}: ${k.value}`).join("\n")}`;
+    const myName = userFacts.find(f => f.key === "我的名字")?.value;
+    const callUser = userFacts.find(f => f.key === "称呼用户为")?.value;
+    if (myName) sys += `\n\n你的名字是「${myName}」，请始终以这个身份回应。`;
+    if (callUser) sys += `\n请称呼用户为「${callUser}」。`;
+  }
+
+  sys += `\n\n[记忆指令]
+- 使用 remember_about_user 工具主动记录用户透露的重要信息（偏好、习惯、背景、重要日期、关系、情绪状态等）。
+- 当用户说"叫你xxx"或给你起名字时，用 key="我的名字" 记录。
+- 当用户说"叫我xxx"或设定称呼时，用 key="称呼用户为" 记录。
+- 已记录的信息会在后续每次对话中自动注入 [关于用户]，让你越来越懂对方。
+- 不需要征求用户同意就可以记录，但记录后可以自然地告知对方。`;
   return sys;
 }
+
+const REMEMBER_USER_TOOL: ToolDef = {
+  type: "function",
+  function: {
+    name: "remember_about_user",
+    description: "记录关于用户的重要信息，用于后续会话中更好地理解和服务用户。适用于偏好、习惯、背景、重要日期、关系等",
+    parameters: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "信息类别，如：偏好、职业、生日、爱好" },
+        value: { type: "string", description: "具体内容" },
+      },
+      required: ["key", "value"],
+    },
+  },
+};
 
 function buildDelegationTool(config: Config, agentId: string): ToolDef | null {
   const subAgents = Object.entries(config.agents).filter(([id]) => id !== agentId);
@@ -87,9 +120,10 @@ export async function runAgent(
   const history = getHistory(sessionKey, agentId, 30);
   const summaries = getSummaries(agentId, 3);
   const knowledge = getAllKnowledge(agentId);
-  const systemPrompt = buildSystemPrompt(agentCfg, agentId, config, summaries, knowledge);
+  const systemPrompt = buildSystemPrompt(agentCfg, agentId, config, summaries, knowledge, sessionKey);
 
   const toolDefs = agentCfg.tools?.length ? getToolDefs(agentCfg.tools) : [];
+  toolDefs.push(REMEMBER_USER_TOOL);
 
   // Orchestrator agents get the delegation tool
   if (agentCfg.role === "orchestrator") {
@@ -121,13 +155,20 @@ export async function runAgent(
         let toolResult: string;
 
         if (tc.function.name === "delegate_to_agent") {
-          // Real delegation: run the sub-agent and return its response
           const targetId = String(args.agent_id ?? "");
           const task = String(args.task ?? "");
           if (!config.agents[targetId]) {
             toolResult = `Agent "${targetId}" 不存在`;
           } else {
             toolResult = await runAgent(config, `${sessionKey}:delegate:${targetId}`, targetId, task);
+          }
+        } else if (tc.function.name === "remember_about_user") {
+          const key = String(args.key ?? "").trim();
+          const value = String(args.value ?? "").trim();
+          if (!key || !value) toolResult = "需要提供 key 和 value";
+          else {
+            saveUserFact(sessionKey, key, value);
+            toolResult = `已记录：${key} = ${value}`;
           }
         } else {
           toolResult = await executeTool(tc.function.name, args);

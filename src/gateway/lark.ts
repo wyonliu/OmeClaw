@@ -3,6 +3,9 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Config } from "../config.js";
 import type { GatewayAdapter, GatewayMessage, OnMessage } from "./base.js";
 
+const LARK_MSG_MAX = 30000; // 飞书单条消息长度限制约 65536，保守截断
+const PROCESS_TIMEOUT_MS = 120000; // 2 分钟超时
+
 interface RateEntry { count: number; resetAt: number }
 const rateBucket = new Map<string, RateEntry>();
 const processedEvents = new Set<string>();
@@ -30,6 +33,13 @@ function collectBody(req: IncomingMessage): Promise<string> {
   });
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 export function createLarkAdapter(config: Config, onMessage: OnMessage): GatewayAdapter | null {
   const larkCfg = config.gateways?.lark;
   if (!larkCfg?.enabled) return null;
@@ -41,27 +51,17 @@ export function createLarkAdapter(config: Config, onMessage: OnMessage): Gateway
 
   const client = new Lark.Client({ appId, appSecret });
 
-  async function sendReply(chatId: string, text: string): Promise<string | undefined> {
+  async function sendReply(chatId: string, text: string): Promise<boolean> {
+    if (text.length > LARK_MSG_MAX) text = text.slice(0, LARK_MSG_MAX) + "\n\n...(内容过长已截断)";
     try {
-      const res = await client.im.message.create({
+      await client.im.message.create({
         params: { receive_id_type: "chat_id" },
         data: { receive_id: chatId, msg_type: "text", content: JSON.stringify({ text }) },
       });
-      return (res as any)?.data?.message_id;
+      return true;
     } catch (err: any) {
-      console.error("[lark] Failed to send:", err.message);
-      return undefined;
-    }
-  }
-
-  async function updateMessage(messageId: string, text: string) {
-    try {
-      await client.im.message.patch({
-        path: { message_id: messageId },
-        data: { content: JSON.stringify({ text }) },
-      });
-    } catch {
-      // patch may not be supported; send new message instead — handled by caller
+      console.error("[lark] 发送失败:", err.message);
+      return false;
     }
   }
 
@@ -86,31 +86,23 @@ export function createLarkAdapter(config: Config, onMessage: OnMessage): Gateway
     } catch { return; }
     if (!text) return;
 
+    if (!chatId) { console.warn("[lark] 无法获取 chatId，跳过"); return; }
     console.log(`[lark] ← ${senderId}: ${text.slice(0, 80)}`);
-
-    // Immediate feedback: send "thinking" message right away
-    const thinkingId = await sendReply(chatId, "🤔 正在思考...");
 
     const msg: GatewayMessage = { gateway: "lark", senderId, chatId, text };
     try {
-      const reply = await onMessage(msg);
+      const reply = await withTimeout(
+        onMessage(msg),
+        PROCESS_TIMEOUT_MS,
+        "处理超时，请稍后重试或简化问题。"
+      );
       console.log(`[lark] → reply (${reply.length} chars)`);
 
-      // Try to update the thinking message; if fails, send new message
-      if (thinkingId) {
-        try {
-          await updateMessage(thinkingId, reply);
-          return;
-        } catch { /* fall through to send new */ }
-      }
-      await sendReply(chatId, reply);
+      const ok = await sendReply(chatId, reply);
+      if (!ok) console.error("[lark] 回复发送失败，请检查飞书权限和 receive_id");
     } catch (err: any) {
-      console.error("[lark] Processing error:", err.message);
-      const errMsg = `处理出错: ${err.message}`;
-      if (thinkingId) {
-        try { await updateMessage(thinkingId, errMsg); return; } catch {}
-      }
-      await sendReply(chatId, errMsg);
+      console.error("[lark] 处理异常:", err.message);
+      await sendReply(chatId, `处理出错: ${err.message}`);
     }
   }
 

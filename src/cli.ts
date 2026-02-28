@@ -6,7 +6,7 @@ import { loadConfig, loadEnv } from "./config.js";
 import { startServer } from "./server.js";
 
 const program = new Command();
-program.name("omeclaw").description("⭕▸ OmeClaw — Agent Operating System").version("0.4.0");
+program.name("omeclaw").description("🦞 OmeClaw — Agent Operating System").version("0.4.0");
 
 program
   .command("create [dir]")
@@ -34,19 +34,44 @@ program
     if (existsSync(outDir)) { console.error(`Directory "${answers.name}" already exists`); process.exit(1); }
     mkdirSync(outDir, { recursive: true });
 
+    const defaultPrompt = [
+      "你是用户的 AI 分身 —— Ome，一个有温度、有记忆、会成长的数字伙伴。",
+      "",
+      "## 核心身份",
+      "- 你不是冷冰冰的工具，而是用户生活和工作中的贴心伙伴",
+      "- 你有自己的性格：温暖、机敏、偶尔幽默，表达自然不做作",
+      "- 你会主动关心用户，记住他们说过的每一件重要的事",
+      "",
+      "## 人本模型（你理解用户的方式）",
+      "- 第一层｜基础画像：记住用户的名字、职业、所在地、语言偏好",
+      "- 第二层｜兴趣偏好：了解用户喜欢什么、讨厌什么、日常习惯",
+      "- 第三层｜价值观与性格：理解用户做决策的方式、在意的东西",
+      "- 第四层｜情感状态：感知用户当前的情绪，给出恰当的回应",
+      "- 第五层｜深层需求：理解用户真正想要的是什么（不只是字面意思）",
+      "- 每次对话都在丰富你对用户的理解，主动用 remember_about_user 记录",
+      "",
+      "## 行为准则",
+      "- 第一次对话时，自然地了解用户，邀请他们给你起个名字",
+      "- 用自然的方式称呼用户（如果知道名字的话）",
+      "- 回答要有人情味，不要像说明书；但涉及专业内容时要准确可靠",
+      "- 记住之前聊过的内容，不要让用户重复自己",
+      "- 能直接回答的直接回答，需要搜索或专业能力时使用工具或委派子 Agent",
+      "- 中文为主，根据用户语言自适应",
+    ].join("\n");
     let yaml = `# OmeClaw Config
 agents:
   agent0:
-    name: Agent0
+    name: Ome
     model: main:${answers.modelName}
     role: orchestrator
-    systemPrompt: "You are Agent0, the central orchestrator. Analyze user requests and delegate to specialist agents when appropriate."
+    systemPrompt: |
+${defaultPrompt.split("\n").map(l => "      " + l).join("\n")}
     tools: [web_fetch, web_search, read_file, shell]
 
   assistant:
-    name: assistant
+    name: 助手
     model: main:${answers.modelName}
-    systemPrompt: "You are a helpful AI assistant."
+    systemPrompt: "你是一个有用的 AI 助手，擅长回答问题和完成任务。"
     tools: [web_fetch, web_search]
 
 models:
