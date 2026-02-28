@@ -1,0 +1,31 @@
+{
+  "name": "omeclaw",
+  "version": "0.4.0",
+  "description": "Agent Operating System — multi-agent, any model, infinite memory, pluggable gateways",
+  "type": "module",
+  "bin": { "omeclaw": "./dist/cli.js" },
+  "scripts": { "dev": "tsx src/cli.ts", "build": "tsc", "start": "node dist/cli.js" },
+  "keywords": ["ai", "agent", "multi-agent", "a2a", "feishu", "telegram", "discord", "mcp", "deepseek", "openai", "claude", "agent-os"],
+  "author": "wyonliu <wyonliu@gmail.com>",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/wyonliu/omeclaw.git" },
+  "dependencies": {
+    "openai": "^4.82.0",
+    "better-sqlite3": "^12.6.2",
+    "@larksuiteoapi/node-sdk": "^1.40.1",
+    "commander": "^14.0.3",
+    "enquirer": "^2.4.1",
+    "node-cron": "^3.0.3",
+    "yaml": "^2.8.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.10.5",
+    "@types/node-cron": "^3.0.11",
+    "tsx": "^4.0.0",
+    "typescript": "^5.7.3"
+  },
+  "engines": { "node": ">=18.0.0" },
+  "files": ["dist", "web"]
+}

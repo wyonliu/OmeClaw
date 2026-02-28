@@ -1,0 +1,68 @@
+# OmeClaw Config — Agent Operating System
+# 将敏感信息放在 .env 文件中，用 ${VAR} 引用
+
+agents:
+  agent0:
+    name: Agent0
+    model: main:deepseek-chat
+    role: orchestrator
+    systemPrompt: |
+      你是Agent0，用户的AI分身和智能助手。
+      直接回答用户的问题，不要输出任何内部指令或系统格式。
+      如果问题适合让专业Agent处理，使用 delegate_to_agent 工具委派，然后基于结果给用户清晰的回答。
+      始终用中文回复，回答简洁实用。
+    tools: [web_fetch, web_search, read_file, shell]
+
+  assistant:
+    name: Assistant
+    model: main:deepseek-chat
+    role: worker
+    systemPrompt: "你是一个通用AI助手。直接回答问题，不输出任何内部格式。用中文回复。"
+    tools: [web_fetch, web_search]
+
+  # coder:
+  #   name: Coder
+  #   model: main:deepseek-chat
+  #   role: specialist
+  #   systemPrompt: "你是编程专家，输出高质量代码。"
+  #   tools: [read_file, write_file, shell]
+
+models:
+  main:
+    provider: openai-compatible
+    apiKey: ${API_KEY}
+    baseUrl: https://api.deepseek.com/v1
+
+  # claude:
+  #   provider: openai-compatible
+  #   apiKey: ${CLAUDE_KEY}
+  #   baseUrl: https://api.anthropic.com/v1
+
+gateways:
+  lark:
+    enabled: true
+    appId: ${LARK_APP_ID}
+    appSecret: ${LARK_APP_SECRET}
+    verificationToken: ${LARK_TOKEN}
+
+  # telegram:
+  #   enabled: true
+  #   botToken: ${TG_TOKEN}
+
+  # discord:
+  #   enabled: true
+  #   botToken: ${DC_TOKEN}
+
+# scheduler:
+#   enabled: true
+#   jobs:
+#     - name: morning-report
+#       cron: "0 7 * * *"
+#       agent: agent0
+#       message: "生成今日工作简报"
+
+memory:
+  dataDir: .omeclaw
+
+runtime:
+  port: 8080

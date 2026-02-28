@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.omeclaw/
+*.log
+.DS_Store
+*.tsbuildinfo
+
+# Internal planning docs
+OMECLAW-PLAN*.md
+omeclaw-plan-by-*.md
+wyon-agents-army.md

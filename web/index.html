@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmeClaw — Agent OS</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐾</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="logo">🐾 OmeClaw</div>
+      <div class="sidebar-section">
+        <div class="section-title">Navigation</div>
+        <button class="nav-btn active" data-view="chat">💬 Chat</button>
+        <button class="nav-btn" data-view="agents">🤖 Agents</button>
+        <button class="nav-btn" data-view="activity">📋 Activity</button>
+        <button class="nav-btn" data-view="memory">🧠 Memory</button>
+        <button class="nav-btn" data-view="status">📊 System</button>
+      </div>
+      <div class="sidebar-section agent-list" id="sidebar-agents"></div>
+      <div class="sidebar-footer">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="conn-status">Connecting...</span>
+      </div>
+    </aside>
+
+    <main class="content">
+      <!-- Chat -->
+      <div id="view-chat" class="view active">
+        <div class="view-header">
+          <h2 id="chat-agent-name">Agent0</h2>
+          <select id="agent-select" class="header-select"></select>
+        </div>
+        <div id="messages" class="messages"></div>
+        <form id="chat-form" class="chat-input">
+          <input type="text" id="chat-input" placeholder="输入消息... (按 / 聚焦，用 @agent 路由)" autocomplete="off">
+          <button type="submit" id="send-btn">发送</button>
+        </form>
+      </div>
+
+      <!-- Agents -->
+      <div id="view-agents" class="view">
+        <div class="view-header"><h2>Agent Management</h2><button class="btn-primary" id="create-agent-btn">+ 创建 Agent</button></div>
+        <div id="agents-grid" class="card-grid"></div>
+        <div class="modal" id="create-modal" style="display:none">
+          <div class="modal-content">
+            <h3>创建新 Agent</h3>
+            <label>ID <input id="new-id" placeholder="e.g. translator"></label>
+            <label>Name <input id="new-name" placeholder="e.g. 翻译专家"></label>
+            <label>Model <input id="new-model" placeholder="e.g. main:deepseek-chat" value="main:deepseek-chat"></label>
+            <label>Role <select id="new-role"><option value="worker">Worker</option><option value="specialist">Specialist</option><option value="orchestrator">Orchestrator</option></select></label>
+            <label>System Prompt <textarea id="new-prompt" rows="3" placeholder="你是一个..."></textarea></label>
+            <label>Tools <input id="new-tools" placeholder="web_fetch, web_search, shell (逗号分隔)"></label>
+            <div class="modal-actions"><button class="btn-secondary" id="cancel-create">取消</button><button class="btn-primary" id="confirm-create">创建</button></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Activity -->
+      <div id="view-activity" class="view">
+        <div class="view-header"><h2>Activity Log</h2><button class="btn-secondary" id="refresh-activity">刷新</button></div>
+        <div id="activity-log" class="activity-log"></div>
+      </div>
+
+      <!-- Memory -->
+      <div id="view-memory" class="view">
+        <div class="view-header">
+          <h2>Memory Search</h2>
+          <div class="search-group"><input type="text" id="mem-q" placeholder="搜索记忆..."><button class="btn-primary" id="mem-search-btn">搜索</button></div>
+        </div>
+        <div id="mem-results" class="card-grid"></div>
+      </div>
+
+      <!-- Status -->
+      <div id="view-status" class="view">
+        <div class="view-header"><h2>System Status</h2></div>
+        <div id="status-grid" class="card-grid"></div>
+      </div>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
