@@ -12,7 +12,7 @@ function formatMsg(text){
   s=s.replace(/\n/g,'<br>');
   return s;
 }
-function timeFmt(t){return new Date(t).toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false})}
+function timeFmt(t){return new Date(typeof t==="number"&&t<1e12?t*1000:t).toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false})}
 
 // ─── NAVIGATION ───
 $$(".nav-btn").forEach(b=>{b.addEventListener("click",()=>{
@@ -22,7 +22,6 @@ $$(".nav-btn").forEach(b=>{b.addEventListener("click",()=>{
   if(b.dataset.view==="status")loadStatus();
   if(b.dataset.view==="agents")loadAgents();
   if(b.dataset.view==="memory")loadMemory();
-  if(b.dataset.view==="chat")loadChatHistory();
 })});
 function switchView(name){
   $$(".nav-btn").forEach(x=>x.classList.remove("active"));
@@ -33,25 +32,21 @@ function switchView(name){
 // ─── AGENTS ───
 async function loadAgents(){
   try{
-    const r=await(await fetch("/api/agents")).json();agents=r.agents;
+    const r=await(await fetch("/api/agents")).json();agents=r.agents||[];
     const sel=$("#agent-select");
     sel.innerHTML=agents.map(a=>`<option value="${a.id}"${a.id===curAgent?" selected":""}>${a.name} [${a.role}]</option>`).join("");
     if(!curAgent||!agents.find(a=>a.id===curAgent))curAgent=agents[0]?.id??"";
     sel.value=curAgent;
-    sel.onchange=()=>{curAgent=sel.value;updateChatHeader();loadChatHistory();};
+    sel.onchange=()=>{curAgent=sel.value;updateChatHeader();};
     updateChatHeader();
     renderSidebar();
     renderAgentsGrid();
   }catch(e){console.error("loadAgents:",e);setConn(false);}
 }
-
 function updateChatHeader(){
   const a=agents.find(x=>x.id===curAgent);
   $("#chat-agent-name").textContent=a?.name??curAgent;
-  const badge=$("#chat-agent-role");
-  if(badge&&a)badge.textContent=a.role;
 }
-
 function renderSidebar(){
   const sb=$("#sidebar-agents");
   sb.innerHTML=`<div class="section-title">Agents (${agents.length})</div>`+
@@ -59,13 +54,11 @@ function renderSidebar(){
   sb.querySelectorAll(".agent-item").forEach(el=>{el.addEventListener("click",()=>{
     curAgent=el.dataset.id;$("#agent-select").value=curAgent;
     sb.querySelectorAll(".agent-item").forEach(x=>x.classList.remove("active"));el.classList.add("active");
-    updateChatHeader();loadChatHistory();switchView("chat");
+    updateChatHeader();switchView("chat");
   })});
 }
-
 function renderAgentsGrid(){
-  const grid=$("#agents-grid");
-  if(!grid)return;
+  const grid=$("#agents-grid");if(!grid)return;
   grid.innerHTML=agents.map(a=>`<div class="card">
     <div class="card-header"><h3>${esc(a.name)}</h3><span class="tag role">${a.role}</span></div>
     <p>${esc(a.systemPrompt.slice(0,150))}${a.systemPrompt.length>150?"...":""}</p>
@@ -73,7 +66,6 @@ function renderAgentsGrid(){
     ${(a.tools||[]).map(t=>`<span class="tag tool">${esc(t)}</span>`).join("")}</div>
   </div>`).join("");
 }
-
 function setConn(ok){
   $("#conn-status").textContent=ok?"Connected":"Disconnected";
   $("#status-dot").classList.toggle("off",!ok);
@@ -90,86 +82,88 @@ async function loadStatus(){
       <div class="card stat"><div class="stat-label">Agents</div><div class="stat-val">${d.agents?.length??0}</div></div>
       <div class="card stat"><div class="stat-label">Gateways</div><div class="stat-val">${d.gateways?.length?d.gateways.join(", "):"Web"}</div></div>
       <div class="card stat"><div class="stat-label">Memory</div><div class="stat-val">${d.memory?.messages??0} msgs</div></div>
-      <div class="card stat"><div class="stat-label">Tools</div><div class="stat-val">${d.tools?.join(", ")}</div></div>
-      <div class="card stat"><div class="stat-label">Scheduler</div><div class="stat-val">${d.scheduler?`${d.scheduler.jobs} jobs`:"Off"}</div></div>
-      <div class="card stat"><div class="stat-label">A2A Bus</div><div class="stat-val">${d.busAgents?.length??0} agents</div></div>`;
+      <div class="card stat"><div class="stat-label">Tools</div><div class="stat-val">${d.tools?.join(", ")}</div></div>`;
   }catch{setConn(false);}
 }
 
-// ─── ACTIVITY ── 从数据库读取真实对话，按session thread展示 ───
+// ─── ACTIVITY ── 从数据库读取真实对话 ───
 async function loadActivity(){
   const el=$("#activity-log");
   try{
     const data=await(await fetch("/api/activity")).json();
     const convos=data.conversations||[];
-    if(!convos.length){el.innerHTML=`<p class="empty-msg">暂无对话记录</p>`;return;}
-
-    // 按 session_key 分组
+    if(!convos.length){el.innerHTML=`<p class="empty-msg">暂无对话记录。发条消息试试？</p>`;return;}
     const bySession=new Map();
     for(const m of convos){
       const k=m.session_key||"unknown";
       if(!bySession.has(k))bySession.set(k,[]);
       bySession.get(k).push(m);
     }
-
     let html="";
     for(const [session,msgs] of bySession){
       msgs.sort((a,b)=>(a.created_at||0)-(b.created_at||0));
-      const label=session.startsWith("lark:")?"飞书":session.startsWith("web:")?"Web":session.startsWith("cli")?"CLI":session;
+      const label=session.startsWith("lark:")?"🪼 飞书":session.startsWith("web:")?"💻 Web":session.startsWith("cli")?"⌨️ CLI":session;
       const lastTime=msgs[msgs.length-1]?.created_at;
       html+=`<div class="act-thread">`;
-      html+=`<div class="act-thread-header"><span class="act-src">${esc(label)}</span><span class="act-agent">${esc(msgs[0]?.agent_id||"")}</span><span class="act-time">${lastTime?timeFmt(lastTime*1000):""}</span></div>`;
+      html+=`<div class="act-thread-header"><span class="act-src">${esc(label)}</span><span class="act-time">${lastTime?timeFmt(lastTime):""}</span></div>`;
       html+=`<div class="act-thread-msgs">`;
       for(const m of msgs){
         const isUser=m.role==="user";
-        const cls=isUser?"act-msg-user":"act-msg-bot";
-        html+=`<div class="${cls}"><span class="act-msg-role">${isUser?"👤":"🪼"}</span><span class="act-msg-text">${esc((m.content||"").slice(0,300))}${(m.content||"").length>300?"...":""}</span></div>`;
+        html+=`<div class="act-msg ${isUser?"act-msg-user":"act-msg-bot"}">
+          <div class="act-msg-text">${esc((m.content||"").slice(0,300))}${(m.content||"").length>300?"...":""}</div>
+        </div>`;
       }
       html+=`</div></div>`;
     }
     el.innerHTML=html;
-  }catch(e){el.innerHTML=`<p class="empty-msg">加载失败: ${esc(String(e))}</p>`;}
+  }catch(e){el.innerHTML=`<p class="empty-msg">加载失败</p>`;}
 }
 
 // ─── CHAT ───
 function addMsg(role,html){
   const d=document.createElement("div");d.className=`msg ${role}`;
   d.innerHTML=html;
-  $("#messages").appendChild(d);
-  $("#messages").scrollTop=$("#messages").scrollHeight;
+  const container=$("#messages");
+  container.appendChild(d);
+  container.scrollTop=container.scrollHeight;
   return d;
 }
-
 function thinkingHtml(name){
   return `<span class="agent-tag">${esc(name)}</span><div class="thinking"><span></span><span></span><span></span></div>`;
 }
 
+// 加载聊天历史 — 只在拿到数据后才替换内容
 async function loadChatHistory(){
   try{
-    const url=`/api/chat/history?sessionId=${encodeURIComponent(sid)}`;
-    const {messages}=await(await fetch(url)).json();
-    const container=$("#messages");container.innerHTML="";
+    const resp=await fetch(`/api/chat/history?sessionId=${encodeURIComponent(sid)}`);
+    const {messages}=await resp.json();
+    const container=$("#messages");
     if(!messages||!messages.length){
-      const a=agents.find(x=>x.id===curAgent);
-      const name=a?.name||"Ome";
-      container.innerHTML=`<div class="welcome-msg">
-        <div class="welcome-icon">🪼</div>
-        <h3>你好，我是 ${esc(name)}</h3>
-        <p>我是你的 AI 分身，会记住你说的每一件重要的事。<br>
-        你可以给我起个名字，告诉我怎么称呼你，我会越来越懂你。</p>
-        <div class="welcome-tips">
-          <span data-text="叫你小O">叫你小O</span>
-          <span data-text="叫我老板">叫我老板</span>
-          <span data-text="我喜欢编程和咖啡">我喜欢...</span>
-        </div>
-      </div>`;
+      // 没有历史，只在容器为空时显示欢迎
+      if(!container.children.length||container.querySelector(".welcome-msg")){
+        const a=agents.find(x=>x.id===curAgent);
+        const name=a?.name||"Ome";
+        container.innerHTML=`<div class="welcome-msg">
+          <div class="welcome-icon">🪼</div>
+          <h3>你好，我是 ${esc(name)}</h3>
+          <p>我是你的 AI 分身，会记住关于你的一切。<br>给我起个名字，告诉我怎么称呼你，我们开始吧。</p>
+          <div class="welcome-tips">
+            <span data-text="叫你小O">叫你小O</span>
+            <span data-text="叫我老板">叫我老板</span>
+            <span data-text="我是做产品的，喜欢咖啡和跑步">聊聊我自己</span>
+          </div>
+        </div>`;
+      }
       return;
     }
+    // 有历史消息：渲染
+    let html="";
     for(const m of messages){
       const agent=m.agent_id||"";
-      if(m.role==="user")addMsg("user",esc(m.content));
-      else addMsg("assistant",`${agent?`<span class="agent-tag">${esc(agent)}</span>`:""}${formatMsg(m.content)}`);
+      if(m.role==="user") html+=`<div class="msg user">${esc(m.content)}</div>`;
+      else html+=`<div class="msg assistant">${agent?`<span class="agent-tag">${esc(agent)}</span>`:""}${formatMsg(m.content)}</div>`;
     }
+    container.innerHTML=html;
     container.scrollTop=container.scrollHeight;
   }catch(e){console.error("loadChatHistory:",e);}
 }
@@ -181,18 +175,18 @@ $("#chat-form").addEventListener("submit",e=>{
   if(!text)return;
   inp.value="";inp.focus();
 
-  const agentName=agents.find(a=>a.id===curAgent)?.name??curAgent;
-  const agentId=curAgent;
+  // 清除欢迎页
+  const welcome=$("#messages .welcome-msg");
+  if(welcome)welcome.remove();
 
+  const agentName=agents.find(a=>a.id===curAgent)?.name??curAgent;
   addMsg("user",esc(text));
   const ld=addMsg("assistant",thinkingHtml(agentName));
   ld.classList.add("loading");
-
-  pendingChats++;
-  updatePending();
+  pendingChats++;updatePending();
 
   fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({message:text,sessionId:sid,agentId})})
+    body:JSON.stringify({message:text,sessionId:sid,agentId:curAgent})})
   .then(r=>r.json())
   .then(data=>{
     if(data.error){
@@ -210,10 +204,8 @@ $("#chat-form").addEventListener("submit",e=>{
   })
   .finally(()=>{pendingChats--;updatePending();});
 });
-
 function updatePending(){
-  const btn=$("#send-btn");
-  btn.textContent=pendingChats>0?`发送 (${pendingChats})`:"发送";
+  $("#send-btn").textContent=pendingChats>0?`发送 (${pendingChats})`:"发送";
 }
 
 // ─── CREATE AGENT ───
@@ -247,7 +239,6 @@ async function loadMemory(){
     renderMemory(messages,`最近 ${messages.length} 条记忆`);
   }catch(e){console.error("loadMemory:",e);}
 }
-
 async function searchMemory(q){
   const btn=$("#mem-search-btn");btn.disabled=true;btn.textContent="搜索中...";
   try{
@@ -256,26 +247,20 @@ async function searchMemory(q){
   }catch(e){showToast("搜索失败","error");}
   finally{btn.disabled=false;btn.textContent="搜索";}
 }
-
 function renderMemory(items,title){
   const el=$("#mem-results");
   if(!items.length){el.innerHTML=`<div class="memory-empty"><p class="empty-msg">${esc(title)}</p></div>`;return;}
   el.innerHTML=`<div class="memory-header">${esc(title)}</div>`+
     items.map(r=>{
       const ts=r.created_at?new Date(r.created_at*1000).toLocaleString("zh-CN"):"";
-      const agent=r.agent_id||"";
       const cls=r.role==="user"?"mem-user":"mem-assistant";
       return `<div class="mem-item ${cls}">
-        <div class="mem-meta"><span class="mem-role">${r.role}</span>${agent?`<span class="mem-agent">${agent}</span>`:""}${ts?`<span class="mem-time">${ts}</span>`:""}</div>
+        <div class="mem-meta"><span class="mem-role">${r.role}</span>${ts?`<span class="mem-time">${ts}</span>`:""}</div>
         <div class="mem-content">${esc((r.content||"").slice(0,500))}${(r.content||"").length>500?"...":""}</div>
       </div>`;
     }).join("");
 }
-
-$("#mem-search-btn")?.addEventListener("click",()=>{
-  const q=$("#mem-q")?.value?.trim();
-  if(q)searchMemory(q);else loadMemory();
-});
+$("#mem-search-btn")?.addEventListener("click",()=>{const q=$("#mem-q")?.value?.trim();if(q)searchMemory(q);else loadMemory();});
 $("#mem-q")?.addEventListener("keypress",e=>{if(e.key==="Enter"){e.preventDefault();$("#mem-search-btn")?.click();}});
 
 // ─── TOAST ───
@@ -286,18 +271,14 @@ function showToast(msg,type="info"){
   setTimeout(()=>{t.classList.remove("show");setTimeout(()=>t.remove(),300);},3000);
 }
 
-// ─── WELCOME TIPS CLICK → 填入输入框并直接发送 ───
+// ─── WELCOME TIPS ───
 document.addEventListener("click",e=>{
-  const tip=e.target.closest&&e.target.closest(".welcome-tips span[data-text]");
+  const tip=e.target.closest&&e.target.closest("[data-text]");
   if(tip){
     const text=tip.getAttribute("data-text");
-    if(text){
-      $("#chat-input").value=text;
-      $("#chat-input").focus();
-    }
+    if(text){$("#chat-input").value=text;$("#chat-input").focus();}
   }
 });
-
 document.addEventListener("keydown",e=>{
   if(e.key==="/"&&!["INPUT","TEXTAREA","SELECT"].includes(document.activeElement?.tagName??"")){
     e.preventDefault();$("#chat-input").focus();

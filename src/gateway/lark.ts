@@ -51,43 +51,39 @@ export function createLarkAdapter(config: Config, onMessage: OnMessage): Gateway
 
   const client = new Lark.Client({ appId, appSecret });
 
-  async function replyToMsg(messageId: string, text: string): Promise<boolean> {
+  async function sendMsg(chatId: string, openId: string, text: string): Promise<boolean> {
     if (text.length > LARK_MSG_MAX) text = text.slice(0, LARK_MSG_MAX) + "\n\n...(内容过长已截断)";
-    try {
-      await (client.im.message as any).reply({
-        path: { message_id: messageId },
-        data: { msg_type: "text", content: JSON.stringify({ text }) },
-      });
-      console.log(`[lark] ✉ reply sent (${text.length} chars) to msg ${messageId}`);
-      return true;
-    } catch (err: any) {
-      console.warn(`[lark] reply API failed: ${err.message}, falling back to create`);
-      return false;
-    }
-  }
+    const content = JSON.stringify({ text });
 
-  async function sendToChat(chatId: string, text: string): Promise<boolean> {
-    if (text.length > LARK_MSG_MAX) text = text.slice(0, LARK_MSG_MAX) + "\n\n...(内容过长已截断)";
-    try {
-      await client.im.message.create({
-        params: { receive_id_type: "chat_id" },
-        data: { receive_id: chatId, msg_type: "text", content: JSON.stringify({ text }) },
-      });
-      console.log(`[lark] ✉ message sent (${text.length} chars) to chat ${chatId}`);
-      return true;
-    } catch (err: any) {
-      console.error(`[lark] create API failed: ${err.message}`);
-      return false;
+    // 优先用 chat_id 发送
+    if (chatId) {
+      try {
+        await client.im.message.create({
+          params: { receive_id_type: "chat_id" },
+          data: { receive_id: chatId, msg_type: "text", content },
+        });
+        console.log(`[lark] ✉ sent via chat_id (${text.length} chars)`);
+        return true;
+      } catch (err: any) {
+        console.warn(`[lark] chat_id send failed: ${err.message}`);
+      }
     }
-  }
 
-  async function sendReply(msgId: string, chatId: string, text: string): Promise<boolean> {
-    if (msgId) {
-      const ok = await replyToMsg(msgId, text);
-      if (ok) return true;
+    // 备用：用 open_id 发送
+    if (openId) {
+      try {
+        await client.im.message.create({
+          params: { receive_id_type: "open_id" },
+          data: { receive_id: openId, msg_type: "text", content },
+        });
+        console.log(`[lark] ✉ sent via open_id (${text.length} chars)`);
+        return true;
+      } catch (err: any) {
+        console.error(`[lark] open_id send failed: ${err.message}`);
+      }
     }
-    if (chatId) return sendToChat(chatId, text);
-    console.error("[lark] 无法发送：msgId 和 chatId 都为空");
+
+    console.error("[lark] 发送全部失败！检查飞书权限: im:message, im:message:send_as_bot, contact:user.id:readonly");
     return false;
   }
 
@@ -95,12 +91,13 @@ export function createLarkAdapter(config: Config, onMessage: OnMessage): Gateway
     const msgId = eventData.message?.message_id;
     if (!msgId || dedup(msgId)) return;
 
-    const senderId = eventData.sender?.sender_id?.open_id ?? "unknown";
+    const senderId = eventData.sender?.sender_id?.open_id ?? "";
     const chatId = eventData.message?.chat_id ?? "";
 
+    if (!senderId) { console.warn("[lark] 无 sender open_id"); return; }
     if (allowList.length && !allowList.includes(senderId)) return;
     if (!rateCheck(senderId)) {
-      await sendReply(msgId, chatId, "请求过于频繁，请稍后再试");
+      await sendMsg(chatId, senderId, "请求过于频繁，请稍后再试");
       return;
     }
     if (eventData.message?.message_type !== "text") return;
@@ -114,19 +111,15 @@ export function createLarkAdapter(config: Config, onMessage: OnMessage): Gateway
 
     console.log(`[lark] ← ${senderId}: ${text.slice(0, 80)}`);
 
-    const gwMsg: GatewayMessage = { gateway: "lark", senderId, chatId: chatId || msgId, text };
+    const gwMsg: GatewayMessage = { gateway: "lark", senderId, chatId: chatId || senderId, text };
     try {
-      const reply = await withTimeout(
-        onMessage(gwMsg),
-        PROCESS_TIMEOUT_MS,
-        "处理超时，请稍后重试或简化问题。"
-      );
-      console.log(`[lark] → reply ready (${reply.length} chars)`);
-      const ok = await sendReply(msgId, chatId, reply);
-      if (!ok) console.error("[lark] 所有发送方式均失败，请检查飞书应用权限：im:message:send_as_bot");
+      const t0 = Date.now();
+      const reply = await withTimeout(onMessage(gwMsg), PROCESS_TIMEOUT_MS, "处理超时，请稍后重试。");
+      console.log(`[lark] → reply ready (${reply.length} chars, ${Date.now() - t0}ms)`);
+      await sendMsg(chatId, senderId, reply);
     } catch (err: any) {
-      console.error("[lark] 处理异常:", err.message);
-      await sendReply(msgId, chatId, `处理出错: ${err.message}`);
+      console.error("[lark] 处理异常:", err);
+      await sendMsg(chatId, senderId, `处理出错: ${err.message}`);
     }
   }
 
@@ -137,9 +130,11 @@ export function createLarkAdapter(config: Config, onMessage: OnMessage): Gateway
         const LarkModule = Lark as any;
         if (typeof LarkModule.WSClient !== "function") throw new Error("WSClient not available");
 
-        const dispatcher = new Lark.EventDispatcher({}).register({
-          "im.message.receive_v1": async (data: any) => {
-            await processMessage(data);
+        const dispatcher = new Lark.EventDispatcher({ verificationToken: verifyToken }).register({
+          "im.message.receive_v1": (data: any) => {
+            // 不 await —— 立即返回空字符串防止 SDK 自动回复
+            void processMessage(data).catch(e => console.error("[lark] handler error:", e));
+            return "";
           },
         });
 
@@ -189,6 +184,6 @@ export function createLarkAdapter(config: Config, onMessage: OnMessage): Gateway
       }
     },
 
-    async sendMessage(chatId: string, text: string) { await sendToChat(chatId, text); },
+    async sendMessage(chatId: string, text: string) { await sendMsg(chatId, "", text); },
   };
 }
