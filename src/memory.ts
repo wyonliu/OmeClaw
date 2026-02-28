@@ -148,6 +148,12 @@ export function saveUserFact(sessionKey: string, key: string, value: string) {
   }
 }
 
+export function getRecentConversations(limit = 30): Array<{ session_key: string; role: string; content: string; agent_id: string; created_at: number }> {
+  return db.prepare(
+    "SELECT session_key, role, content, agent_id, created_at FROM messages ORDER BY id DESC LIMIT ?"
+  ).all(limit) as any[];
+}
+
 export function closeMemory() {
   db?.close();
 }

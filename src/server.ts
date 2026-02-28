@@ -4,7 +4,7 @@ import { resolve, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Config } from "./config.js";
 import { listAgents, routeAgent, runAgent, initAgentBus, agentEvents } from "./agent.js";
-import { initMemory, getMessageCount, searchMemory, getRecentMessages, getHistoryForSession } from "./memory.js";
+import { initMemory, getMessageCount, searchMemory, getRecentMessages, getHistoryForSession, getRecentConversations } from "./memory.js";
 import { bus } from "./bus.js";
 import { listTools } from "./tools.js";
 import { createLarkAdapter } from "./gateway/lark.js";
@@ -145,7 +145,8 @@ export function startServer(config: Config, port: number, configPath?: string) {
     }
 
     if (url === "/api/activity" && method === "GET") {
-      return json(res, { logs: activityLog.slice(-100) });
+      const conversations = getRecentConversations(80);
+      return json(res, { logs: activityLog.slice(-100), conversations });
     }
 
     if (url === "/api/bus" && method === "GET") {
@@ -164,10 +165,9 @@ export function startServer(config: Config, port: number, configPath?: string) {
     if (url.startsWith("/api/chat/history") && method === "GET") {
       const params = new URL(fullUrl, "http://localhost").searchParams;
       const sessionId = params.get("sessionId") ?? "";
-      const agentId = params.get("agentId")?.trim() || undefined;
       if (!sessionId) return json(res, { messages: [] });
       const key = `web:${sessionId}`;
-      return json(res, { messages: getHistoryForSession(key, agentId, 50) });
+      return json(res, { messages: getHistoryForSession(key, undefined, 100) });
     }
 
     if (url === "/api/chat" && method === "POST") {
@@ -213,7 +213,7 @@ export function startServer(config: Config, port: number, configPath?: string) {
   });
 
   server.listen(port, () => {
-    console.log(`\n  🦞 OmeClaw v0.4.0 — Agent Operating System`);
+    console.log(`\n  🪼 OmeClaw v0.4.0 — Agent Operating System`);
     console.log(`  ──────────────────────────────────────────`);
     console.log(`  📊 Dashboard:   http://localhost:${port}`);
     console.log(`  🔌 API:         http://localhost:${port}/api/status`);

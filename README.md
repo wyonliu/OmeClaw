@@ -4,7 +4,7 @@
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License">
 </p>
 
-<h1 align="center">🦞 OmeClaw</h1>
+<h1 align="center">🪼 OmeClaw</h1>
 
 <p align="center">
   <strong>你的 AI 分身，越用越懂你</strong>

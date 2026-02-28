@@ -2,7 +2,19 @@ const $=s=>document.querySelector(s),$$=s=>document.querySelectorAll(s);
 const sid=(()=>{let x=localStorage.getItem("omeclaw_sid");if(!x){x="w-"+Math.random().toString(36).slice(2,10);localStorage.setItem("omeclaw_sid",x);}return x;})();
 let curAgent="",agents=[],pendingChats=0;
 
-// Navigation
+// ─── UTILS ───
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+function formatMsg(text){
+  let s=esc(text);
+  s=s.replace(/```([\s\S]*?)```/g,'<pre><code>$1</code></pre>');
+  s=s.replace(/`([^`]+)`/g,'<code>$1</code>');
+  s=s.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');
+  s=s.replace(/\n/g,'<br>');
+  return s;
+}
+function timeFmt(t){return new Date(t).toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false})}
+
+// ─── NAVIGATION ───
 $$(".nav-btn").forEach(b=>{b.addEventListener("click",()=>{
   $$(".nav-btn").forEach(x=>x.classList.remove("active"));b.classList.add("active");
   $$(".view").forEach(v=>v.classList.remove("active"));$(`#view-${b.dataset.view}`).classList.add("active");
@@ -12,8 +24,13 @@ $$(".nav-btn").forEach(b=>{b.addEventListener("click",()=>{
   if(b.dataset.view==="memory")loadMemory();
   if(b.dataset.view==="chat")loadChatHistory();
 })});
+function switchView(name){
+  $$(".nav-btn").forEach(x=>x.classList.remove("active"));
+  $$(`.nav-btn[data-view="${name}"]`).forEach(x=>x.classList.add("active"));
+  $$(".view").forEach(v=>v.classList.remove("active"));$(`#view-${name}`).classList.add("active");
+}
 
-// Load agents
+// ─── AGENTS ───
 async function loadAgents(){
   try{
     const r=await(await fetch("/api/agents")).json();agents=r.agents;
@@ -50,17 +67,11 @@ function renderAgentsGrid(){
   const grid=$("#agents-grid");
   if(!grid)return;
   grid.innerHTML=agents.map(a=>`<div class="card">
-    <div class="card-header"><h3>${a.name}</h3><span class="tag role">${a.role}</span></div>
+    <div class="card-header"><h3>${esc(a.name)}</h3><span class="tag role">${a.role}</span></div>
     <p>${esc(a.systemPrompt.slice(0,150))}${a.systemPrompt.length>150?"...":""}</p>
-    <div class="card-tags"><span class="tag model">${a.model}</span>
-    ${(a.tools||[]).map(t=>`<span class="tag tool">${t}</span>`).join("")}</div>
+    <div class="card-tags"><span class="tag model">${esc(a.model)}</span>
+    ${(a.tools||[]).map(t=>`<span class="tag tool">${esc(t)}</span>`).join("")}</div>
   </div>`).join("");
-}
-
-function switchView(name){
-  $$(".nav-btn").forEach(x=>x.classList.remove("active"));
-  $$(`.nav-btn[data-view="${name}"]`).forEach(x=>x.classList.add("active"));
-  $$(".view").forEach(v=>v.classList.remove("active"));$(`#view-${name}`).classList.add("active");
 }
 
 function setConn(ok){
@@ -68,7 +79,7 @@ function setConn(ok){
   $("#status-dot").classList.toggle("off",!ok);
 }
 
-// Status
+// ─── STATUS ───
 async function loadStatus(){
   try{
     const d=await(await fetch("/api/status")).json();setConn(true);
@@ -85,69 +96,47 @@ async function loadStatus(){
   }catch{setConn(false);}
 }
 
-// Activity — 按 reqId 分组 + 未分组事件逐行展示
+// ─── ACTIVITY ── 从数据库读取真实对话，按session thread展示 ───
 async function loadActivity(){
   const el=$("#activity-log");
   try{
-    const{logs}=await(await fetch("/api/activity")).json();
-    if(!logs||!logs.length){el.innerHTML=`<p class="empty-msg">暂无活动记录</p>`;return;}
-    const byReq=new Map();
-    const ungrouped=[];
-    for(const l of logs){
-      if(l.reqId){
-        if(!byReq.has(l.reqId))byReq.set(l.reqId,[]);
-        byReq.get(l.reqId).push(l);
-      }else ungrouped.push(l);
+    const data=await(await fetch("/api/activity")).json();
+    const convos=data.conversations||[];
+    if(!convos.length){el.innerHTML=`<p class="empty-msg">暂无对话记录</p>`;return;}
+
+    // 按 session_key 分组
+    const bySession=new Map();
+    for(const m of convos){
+      const k=m.session_key||"unknown";
+      if(!bySession.has(k))bySession.set(k,[]);
+      bySession.get(k).push(m);
     }
-    const fmt=t=>new Date(t).toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false});
-    const groups=[];
-    for(const [rid,arr] of byReq){
-      arr.sort((a,b)=>a.time-b.time);
-      const req=arr.find(x=>x.type==="web_chat"||x.type==="gateway_msg");
-      const reply=arr.find(x=>x.type==="web_reply"||x.type==="gateway_reply");
-      const tools=arr.filter(x=>x.type==="tool_call"||x.type==="tool_result");
-      groups.push({req,reply,tools,time:req?.time??arr[0].time});
-    }
-    groups.sort((a,b)=>b.time-a.time);
-    let html=groups.map(g=>{
-      const req=g.req;
-      const reply=g.reply;
-      const src=req?.type==="gateway_msg"?"飞书":"Web";
-      const reqShort=req?.detail?.slice(0,100)??"-";
-      const replyShort=reply?.detail?.slice(0,200)??`<span style="color:var(--text2)">等待回复...</span>`;
-      const toolsHtml=g.tools.length?`<div class="act-tools">${g.tools.map(t=>`<span class="act-tool ${t.type}">${esc(t.type==="tool_call"?(t.detail||"").replace(/\(.*/,""):"→ "+(t.detail||"").slice(0,60))}</span>`).join(" ")}</div>`:"";
-      return `<div class="act-group">
-        <div class="act-group-header"><span class="act-src">${esc(src)}</span><span class="act-agent">${esc(req?.agent||reply?.agent||"")}</span><span class="act-time">${fmt(g.time)}</span></div>
-        <div class="act-req"><strong>问</strong> ${esc(reqShort)}</div>
-        ${toolsHtml}
-        <div class="act-reply"><strong>答</strong> ${reply?esc(replyShort):replyShort}</div>
-      </div>`;
-    }).join("");
-    if(ungrouped.length){
-      html+=`<div style="margin-top:12px"><div class="section-title">其他事件</div>`;
-      html+=ungrouped.slice(-30).reverse().map(l=>`<div class="act-row"><span class="act-time">${fmt(l.time)}</span><span class="act-type ${l.type.replace(/_/g,"-")}">${l.type}</span><span class="act-agent">${esc(l.agent)}</span><span class="act-detail">${esc((l.detail||"").slice(0,120))}</span></div>`).join("");
-      html+=`</div>`;
+
+    let html="";
+    for(const [session,msgs] of bySession){
+      msgs.sort((a,b)=>(a.created_at||0)-(b.created_at||0));
+      const label=session.startsWith("lark:")?"飞书":session.startsWith("web:")?"Web":session.startsWith("cli")?"CLI":session;
+      const lastTime=msgs[msgs.length-1]?.created_at;
+      html+=`<div class="act-thread">`;
+      html+=`<div class="act-thread-header"><span class="act-src">${esc(label)}</span><span class="act-agent">${esc(msgs[0]?.agent_id||"")}</span><span class="act-time">${lastTime?timeFmt(lastTime*1000):""}</span></div>`;
+      html+=`<div class="act-thread-msgs">`;
+      for(const m of msgs){
+        const isUser=m.role==="user";
+        const cls=isUser?"act-msg-user":"act-msg-bot";
+        html+=`<div class="${cls}"><span class="act-msg-role">${isUser?"👤":"🪼"}</span><span class="act-msg-text">${esc((m.content||"").slice(0,300))}${(m.content||"").length>300?"...":""}</span></div>`;
+      }
+      html+=`</div></div>`;
     }
     el.innerHTML=html;
   }catch(e){el.innerHTML=`<p class="empty-msg">加载失败: ${esc(String(e))}</p>`;}
 }
 
 // ─── CHAT ───
-function esc(s){return String(s).replace(/</g,"&lt;").replace(/>/g,"&gt;")}
-function formatMsg(text){
-  let s=esc(text);
-  s=s.replace(/```([\s\S]*?)```/g,'<pre><code>$1</code></pre>');
-  s=s.replace(/`([^`]+)`/g,'<code>$1</code>');
-  s=s.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');
-  s=s.replace(/\n/g,'<br>');
-  return s;
-}
-
-function addMsg(role,html,prepend){
+function addMsg(role,html){
   const d=document.createElement("div");d.className=`msg ${role}`;
   d.innerHTML=html;
-  if(prepend)$("#messages").insertBefore(d,$("#messages").firstChild);
-  else{$("#messages").appendChild(d);$("#messages").scrollTop=$("#messages").scrollHeight;}
+  $("#messages").appendChild(d);
+  $("#messages").scrollTop=$("#messages").scrollHeight;
   return d;
 }
 
@@ -157,35 +146,35 @@ function thinkingHtml(name){
 
 async function loadChatHistory(){
   try{
-    const url=`/api/chat/history?sessionId=${encodeURIComponent(sid)}${curAgent?`&agentId=${encodeURIComponent(curAgent)}`:""}`;
+    const url=`/api/chat/history?sessionId=${encodeURIComponent(sid)}`;
     const {messages}=await(await fetch(url)).json();
     const container=$("#messages");container.innerHTML="";
     if(!messages||!messages.length){
       const a=agents.find(x=>x.id===curAgent);
       const name=a?.name||"Ome";
       container.innerHTML=`<div class="welcome-msg">
-        <div class="welcome-icon">🦞</div>
+        <div class="welcome-icon">🪼</div>
         <h3>你好，我是 ${esc(name)}</h3>
         <p>我是你的 AI 分身，会记住你说的每一件重要的事。<br>
         你可以给我起个名字，告诉我怎么称呼你，我会越来越懂你。</p>
         <div class="welcome-tips">
-          <span>💡 试试说：叫你小O</span>
-          <span>💡 试试说：叫我老板</span>
-          <span>💡 试试说：我喜欢...</span>
+          <span data-text="叫你小O">叫你小O</span>
+          <span data-text="叫我老板">叫我老板</span>
+          <span data-text="我喜欢编程和咖啡">我喜欢...</span>
         </div>
       </div>`;
       return;
     }
     for(const m of messages){
       const agent=m.agent_id||"";
-      if(m.role==="user")addMsg("user",esc(m.content),false);
-      else addMsg("assistant",`${agent?`<span class="agent-tag">${esc(agent)}</span>`:""}${formatMsg(m.content)}`,false);
+      if(m.role==="user")addMsg("user",esc(m.content));
+      else addMsg("assistant",`${agent?`<span class="agent-tag">${esc(agent)}</span>`:""}${formatMsg(m.content)}`);
     }
     container.scrollTop=container.scrollHeight;
   }catch(e){console.error("loadChatHistory:",e);}
 }
 
-// Non-blocking chat submit
+// ─── CHAT SUBMIT ───
 $("#chat-form").addEventListener("submit",e=>{
   e.preventDefault();
   const inp=$("#chat-input"),text=inp.value.trim();
@@ -241,7 +230,7 @@ $("#confirm-create").addEventListener("click",async()=>{
     const r=await(await fetch("/api/agents",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json();
     if(r.ok){
       $("#create-modal").style.display="none";
-      showToast(`Agent "${body.name}" 创建成功，已持久化到 config.yaml`,"success");
+      showToast(`Agent "${body.name}" 创建成功`,"success");
       await loadAgents();
       $("#new-id").value="";$("#new-name").value="";$("#new-prompt").value="";$("#new-tools").value="";
     }else showToast(r.error||"创建失败","error");
@@ -297,13 +286,18 @@ function showToast(msg,type="info"){
   setTimeout(()=>{t.classList.remove("show");setTimeout(()=>t.remove(),300);},3000);
 }
 
+// ─── WELCOME TIPS CLICK → 填入输入框并直接发送 ───
 document.addEventListener("click",e=>{
-  if(e.target.closest&&e.target.closest(".welcome-tips span")){
-    const text=e.target.textContent.replace(/^[^\s]+\s/,"");
-    $("#chat-input").value=text;
-    $("#chat-input").focus();
+  const tip=e.target.closest&&e.target.closest(".welcome-tips span[data-text]");
+  if(tip){
+    const text=tip.getAttribute("data-text");
+    if(text){
+      $("#chat-input").value=text;
+      $("#chat-input").focus();
+    }
   }
 });
+
 document.addEventListener("keydown",e=>{
   if(e.key==="/"&&!["INPUT","TEXTAREA","SELECT"].includes(document.activeElement?.tagName??"")){
     e.preventDefault();$("#chat-input").focus();
@@ -311,7 +305,7 @@ document.addEventListener("keydown",e=>{
 });
 
 $("#refresh-activity")?.addEventListener("click",loadActivity);
-setInterval(()=>{if(document.querySelector("#view-activity.active"))loadActivity();},5000);
+setInterval(()=>{if(document.querySelector("#view-activity.active"))loadActivity();},8000);
 setInterval(loadStatus,15000);
 
 // ─── INIT ───
