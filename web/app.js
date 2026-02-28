@@ -86,36 +86,25 @@ async function loadStatus(){
   }catch{setConn(false);}
 }
 
-// ─── ACTIVITY ── 从数据库读取真实对话 ───
+// ─── ACTIVITY ── 统一时间线 ───
 async function loadActivity(){
   const el=$("#activity-log");
   try{
     const data=await(await fetch("/api/activity")).json();
-    const convos=data.conversations||[];
-    if(!convos.length){el.innerHTML=`<p class="empty-msg">暂无对话记录。发条消息试试？</p>`;return;}
-    const bySession=new Map();
-    for(const m of convos){
-      const k=m.session_key||"unknown";
-      if(!bySession.has(k))bySession.set(k,[]);
-      bySession.get(k).push(m);
-    }
+    const items=data.timeline||[];
+    if(!items.length){el.innerHTML=`<p class="empty-msg">还没有任何动态</p>`;return;}
     let html="";
-    for(const [session,msgs] of bySession){
-      msgs.sort((a,b)=>(a.created_at||0)-(b.created_at||0));
-      const label=session.startsWith("lark:")?"🪼 飞书":session.startsWith("web:")?"💻 Web":session.startsWith("cli")?"⌨️ CLI":session;
-      const lastTime=msgs[msgs.length-1]?.created_at;
-      html+=`<div class="act-thread">`;
-      html+=`<div class="act-thread-header"><span class="act-src">${esc(label)}</span><span class="act-time">${lastTime?timeFmt(lastTime):""}</span></div>`;
-      html+=`<div class="act-thread-msgs">`;
-      for(const m of msgs){
-        const isUser=m.role==="user";
-        html+=`<div class="act-msg ${isUser?"act-msg-user":"act-msg-bot"}">
-          <div class="act-msg-text">${esc((m.content||"").slice(0,300))}${(m.content||"").length>300?"...":""}</div>
-        </div>`;
-      }
-      html+=`</div></div>`;
+    for(const it of items){
+      const t=timeFmt(it.time);
+      const src=it.source?`<span class="tl-src">${esc(it.source)}</span>`:"";
+      let cls="tl-system";
+      if(it.type==="user_in") cls="tl-user";
+      else if(it.type==="agent_out") cls="tl-agent";
+      else if(it.type==="tool"||it.type==="tool_result") cls="tl-tool";
+      html+=`<div class="tl-row ${cls}"><span class="tl-time">${t}</span>${src}<span class="tl-detail">${esc(it.detail)}</span></div>`;
     }
     el.innerHTML=html;
+    el.scrollTop=el.scrollHeight;
   }catch(e){el.innerHTML=`<p class="empty-msg">加载失败</p>`;}
 }
 
@@ -230,35 +219,64 @@ $("#confirm-create").addEventListener("click",async()=>{
   finally{btn.disabled=false;btn.textContent="创建";}
 });
 
-// ─── MEMORY ───
+// ─── MEMORY ── 人本模型 ───
 async function loadMemory(){
   const q=$("#mem-q")?.value?.trim();
   if(q)return searchMemory(q);
   try{
-    const{messages}=await(await fetch("/api/memory/recent")).json();
-    renderMemory(messages,`最近 ${messages.length} 条记忆`);
+    const data=await(await fetch(`/api/memory/model?sessionId=${encodeURIComponent(sid)}`)).json();
+    renderMemoryModel(data);
   }catch(e){console.error("loadMemory:",e);}
 }
 async function searchMemory(q){
   const btn=$("#mem-search-btn");btn.disabled=true;btn.textContent="搜索中...";
   try{
     const{results}=await(await fetch(`/api/memory/search?q=${encodeURIComponent(q)}`)).json();
-    renderMemory(results,results.length?`"${q}" 找到 ${results.length} 条`:`没有找到 "${q}" 相关记忆`);
+    const el=$("#mem-results");
+    if(!results.length){el.innerHTML=`<p class="empty-msg">没有找到 "${esc(q)}" 相关记忆</p>`;return;}
+    el.innerHTML=results.map(r=>{
+      const ts=r.created_at?new Date(r.created_at*1000).toLocaleString("zh-CN"):"";
+      return `<div class="mem-search-item"><span class="mem-role-tag">${r.role}</span><span class="mem-time">${ts}</span><div class="mem-text">${esc((r.content||"").slice(0,300))}</div></div>`;
+    }).join("");
   }catch(e){showToast("搜索失败","error");}
   finally{btn.disabled=false;btn.textContent="搜索";}
 }
-function renderMemory(items,title){
+function renderMemoryModel(data){
   const el=$("#mem-results");
-  if(!items.length){el.innerHTML=`<div class="memory-empty"><p class="empty-msg">${esc(title)}</p></div>`;return;}
-  el.innerHTML=`<div class="memory-header">${esc(title)}</div>`+
-    items.map(r=>{
-      const ts=r.created_at?new Date(r.created_at*1000).toLocaleString("zh-CN"):"";
-      const cls=r.role==="user"?"mem-user":"mem-assistant";
-      return `<div class="mem-item ${cls}">
-        <div class="mem-meta"><span class="mem-role">${r.role}</span>${ts?`<span class="mem-time">${ts}</span>`:""}</div>
-        <div class="mem-content">${esc((r.content||"").slice(0,500))}${(r.content||"").length>500?"...":""}</div>
-      </div>`;
-    }).join("");
+  const pct=data.totalFacts?Math.round(data.filledCategories/data.totalCategories*100):0;
+  let html=`<div class="mem-overview">
+    <div class="mem-stats">
+      <div class="mem-stat-ring"><svg viewBox="0 0 36 36"><path class="ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" /><path class="ring-fill" stroke-dasharray="${pct}, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" /></svg><span class="ring-text">${pct}%</span></div>
+      <div class="mem-stat-info"><div class="mem-stat-title">记忆完成度</div><div class="mem-stat-sub">${data.filledCategories}/${data.totalCategories} 维度 · ${data.totalFacts} 条记忆</div></div>
+    </div>`;
+  if(data.identity?.myName||data.identity?.callUser){
+    html+=`<div class="mem-identity">`;
+    if(data.identity.myName) html+=`<span class="mem-id-tag">我叫 ${esc(data.identity.myName)}</span>`;
+    if(data.identity.callUser) html+=`<span class="mem-id-tag">叫TA ${esc(data.identity.callUser)}</span>`;
+    if(data.identity.relationship) html+=`<span class="mem-id-tag">${esc(data.identity.relationship)}</span>`;
+    html+=`</div>`;
+  }
+  html+=`</div><div class="mem-categories">`;
+  for(const cat of data.categories){
+    const filled=cat.filled;
+    html+=`<div class="mem-cat ${filled?"mem-cat-filled":"mem-cat-empty"}">
+      <div class="mem-cat-header"><span class="mem-cat-icon">${cat.icon}</span><span class="mem-cat-name">${esc(cat.name)}</span>${filled?`<span class="mem-cat-count">${cat.facts.length}</span>`:""}</div>`;
+    if(filled){
+      html+=`<div class="mem-cat-facts">`;
+      for(const f of cat.facts) html+=`<div class="mem-fact"><span class="mem-fact-key">${esc(f.key)}</span><span class="mem-fact-val">${esc(f.value)}</span></div>`;
+      html+=`</div>`;
+    }else{
+      html+=`<div class="mem-cat-hint">还没聊到这个方面</div>`;
+    }
+    html+=`</div>`;
+  }
+  html+=`</div>`;
+  if(data.uncategorized?.length){
+    html+=`<div class="mem-uncat"><div class="mem-cat-header"><span class="mem-cat-icon">📎</span><span class="mem-cat-name">其他记忆</span><span class="mem-cat-count">${data.uncategorized.length}</span></div><div class="mem-cat-facts">`;
+    for(const f of data.uncategorized) html+=`<div class="mem-fact"><span class="mem-fact-key">${esc(f.key)}</span><span class="mem-fact-val">${esc(f.value)}</span></div>`;
+    html+=`</div></div>`;
+  }
+  el.innerHTML=html;
 }
 $("#mem-search-btn")?.addEventListener("click",()=>{const q=$("#mem-q")?.value?.trim();if(q)searchMemory(q);else loadMemory();});
 $("#mem-q")?.addEventListener("keypress",e=>{if(e.key==="Enter"){e.preventDefault();$("#mem-search-btn")?.click();}});
@@ -296,7 +314,7 @@ async function loadBond(){
     const nameEl=$("#bond-name"),emojiEl=$("#bond-emoji"),levelEl=$("#bond-level");
     if(nameEl)nameEl.textContent=d.myName||"还没名字";
     if(emojiEl)emojiEl.textContent=d.emoji||"🫧";
-    if(levelEl)levelEl.textContent=`${d.level} · 记住了${d.factCount}件事`;
+    if(levelEl)levelEl.textContent=`${d.level} · ${d.factCount}条记忆 · ${d.completeness||0}%`;
   }catch(e){console.error("loadBond:",e);}
 }
 

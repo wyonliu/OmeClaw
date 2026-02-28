@@ -4,13 +4,13 @@ import { resolve, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Config } from "./config.js";
 import { listAgents, routeAgent, runAgent, initAgentBus, agentEvents } from "./agent.js";
-import { initMemory, getMessageCount, searchMemory, getRecentMessages, getHistoryForSession, getRecentConversations, getUserFacts, getUserFactCount } from "./memory.js";
+import { initMemory, getMessageCount, searchMemory, getRecentMessages, getHistoryForSession, getUserFacts, getUserFactCount } from "./memory.js";
 import { bus } from "./bus.js";
 import { listTools } from "./tools.js";
 import { createLarkAdapter } from "./gateway/lark.js";
 import { createTelegramAdapter } from "./gateway/telegram.js";
 import { createDiscordAdapter } from "./gateway/discord.js";
-import { registerGateway, allGateways, type GatewayMessage } from "./gateway/base.js";
+import { registerGateway, allGateways, getGateway, type GatewayMessage } from "./gateway/base.js";
 import { startScheduler } from "./scheduler.js";
 
 const __dir = resolve(fileURLToPath(import.meta.url), "../..");
@@ -19,13 +19,25 @@ const MIME: Record<string, string> = {
   ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png",
 };
 
-interface ActivityLog { time: number; type: string; agent: string; detail: string; reqId?: string }
+interface ActivityLog { time: number; type: string; agent: string; detail: string; source?: string }
 const activityLog: ActivityLog[] = [];
-let nextReqId = 0;
-function logActivity(type: string, agent: string, detail: string, reqId?: string) {
-  activityLog.push({ time: Date.now(), type, agent, detail, reqId });
-  if (activityLog.length > 500) activityLog.splice(0, 250);
+
+let larkLogChatId = "";
+function logActivity(type: string, agent: string, detail: string, source?: string) {
+  activityLog.push({ time: Date.now(), type, agent, detail, source });
+  if (activityLog.length > 1000) activityLog.splice(0, 500);
 }
+
+export function setLarkLogChat(chatId: string) { larkLogChatId = chatId; }
+export function pushSystemLog(text: string) {
+  logActivity("system", "server", text);
+  if (larkLogChatId) {
+    const lark = getGateway("lark");
+    if (lark) void lark.sendMessage(larkLogChatId, `[系统] ${text}`).catch(() => {});
+  }
+}
+
+export { logActivity, activityLog };
 
 function json(res: ServerResponse, data: unknown, status = 200) {
   res.writeHead(status, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
@@ -40,20 +52,15 @@ export function startServer(config: Config, port: number, configPath?: string) {
   initMemory(dataDir);
   initAgentBus(config);
 
-  let activeReqId = "";
-  agentEvents.on("tool_call", (d: any) => logActivity("tool_call", d.agentId, `${d.tool}(${JSON.stringify(d.args).slice(0, 100)})`, activeReqId || undefined));
-  agentEvents.on("tool_result", (d: any) => logActivity("tool_result", d.agentId, `${d.tool} → ${d.result}`, activeReqId || undefined));
+  agentEvents.on("tool_call", (d: any) => logActivity("tool", d.agentId, `🔧 ${d.tool}(${JSON.stringify(d.args).slice(0, 80)})`));
+  agentEvents.on("tool_result", (d: any) => logActivity("tool_result", d.agentId, `✅ ${d.tool} → ${d.result.slice(0, 100)}`));
 
   const onMessage = async (msg: GatewayMessage) => {
-    const reqId = `r${++nextReqId}`;
-    activeReqId = reqId;
-    logActivity("gateway_msg", msg.gateway, `${msg.senderName ?? msg.senderId}: ${msg.text.slice(0, 80)}`, reqId);
-    try {
-      const { agentId, cleanText } = routeAgent(config, msg.text);
-      const reply = await runAgent(config, `${msg.gateway}:${msg.senderId}`, agentId, cleanText);
-      logActivity("gateway_reply", agentId, reply.slice(0, 150), reqId);
-      return reply;
-    } finally { activeReqId = ""; }
+    logActivity("user_in", msg.gateway, `${msg.text.slice(0, 120)}`, msg.gateway);
+    const { agentId, cleanText } = routeAgent(config, msg.text);
+    const reply = await runAgent(config, `${msg.gateway}:${msg.senderId}`, agentId, cleanText);
+    logActivity("agent_out", agentId, reply.slice(0, 150), msg.gateway);
+    return reply;
   };
 
   const lark = createLarkAdapter(config, onMessage);
@@ -119,7 +126,7 @@ export function startServer(config: Config, port: number, configPath?: string) {
             bus.send({ from: id, to: m.from, type: "result", payload: r });
           }
         });
-        logActivity("agent_created", id, `${name} (${role ?? "worker"})`);
+        logActivity("system", id, `🧩 Agent 创建: ${name} (${role ?? "worker"})`);
         console.log(`[server] Agent created: ${id} → ${name} [${role}] model=${model}`);
 
         if (configPath && existsSync(configPath)) {
@@ -145,8 +152,7 @@ export function startServer(config: Config, port: number, configPath?: string) {
     }
 
     if (url === "/api/activity" && method === "GET") {
-      const conversations = getRecentConversations(80);
-      return json(res, { logs: activityLog.slice(-100), conversations });
+      return json(res, { timeline: activityLog.slice(-200) });
     }
 
     if (url === "/api/bus" && method === "GET") {
@@ -160,6 +166,45 @@ export function startServer(config: Config, port: number, configPath?: string) {
     if (url.startsWith("/api/memory/search") && method === "GET") {
       const q = new URL(fullUrl, "http://localhost").searchParams.get("q") ?? "";
       return json(res, { results: searchMemory(q, undefined, 20) });
+    }
+
+    if (url.startsWith("/api/memory/model") && method === "GET") {
+      const params = new URL(fullUrl, "http://localhost").searchParams;
+      const sessionId = params.get("sessionId") ?? "";
+      const key = sessionId ? `web:${sessionId}` : "";
+      const facts = key ? getUserFacts(key) : [];
+
+      const categories = [
+        { id: "basic", name: "基本画像", icon: "👤", keys: ["姓名","名字","年龄","性别","生日","城市","职业","公司","行业","工作"] },
+        { id: "tags", name: "身份标签", icon: "🏷️", keys: ["星座","属相","生肖","八字","MBTI","血型"] },
+        { id: "personality", name: "性格特质", icon: "🧠", keys: ["性格","内向","外向","理性","感性","沟通","决策"] },
+        { id: "likes", name: "喜好偏好", icon: "❤️", keys: ["喜欢","讨厌","食物","音乐","电影","书","运动","爱好","兴趣","习惯","作息"] },
+        { id: "values", name: "价值观", icon: "⚖️", keys: ["信条","座右铭","底线","原则","态度","价值"] },
+        { id: "people", name: "身边的人", icon: "👥", keys: ["家人","父母","伴侣","恋人","配偶","朋友","同事","子女","兄弟","姐妹"] },
+        { id: "moments", name: "重要时刻", icon: "📌", keys: ["纪念日","里程碑","转折","经历","特殊"] },
+        { id: "goals", name: "目标梦想", icon: "🎯", keys: ["目标","计划","理想","梦想","焦虑","困扰","在忙","项目"] },
+        { id: "emotion", name: "情感状态", icon: "💭", keys: ["心情","情绪","开心","难过","压力","烦","累","状态"] },
+        { id: "meta", name: "玄学档案", icon: "🔮", keys: ["命理","紫微","五行","本命","运势","玄学"] },
+      ];
+
+      const result = categories.map(cat => {
+        const matched = facts.filter(f => cat.keys.some(k => f.key.includes(k)));
+        return { ...cat, facts: matched, filled: matched.length > 0 };
+      });
+
+      const uncategorized = facts.filter(f =>
+        !categories.some(cat => cat.keys.some(k => f.key.includes(k)))
+        && !["我的名字","称呼用户为","关系定义"].includes(f.key)
+      );
+
+      const filledCount = result.filter(c => c.filled).length;
+      const identity = {
+        myName: facts.find(f => f.key === "我的名字")?.value,
+        callUser: facts.find(f => f.key === "称呼用户为")?.value,
+        relationship: facts.find(f => f.key === "关系定义")?.value,
+      };
+
+      return json(res, { categories: result, uncategorized, identity, totalFacts: facts.length, filledCategories: filledCount, totalCategories: categories.length });
     }
 
     if (url.startsWith("/api/bond") && method === "GET") {
@@ -176,7 +221,22 @@ export function startServer(config: Config, port: number, configPath?: string) {
       else { level = "灵魂伴侣"; emoji = "🌊"; }
       const myName = facts.find(f => f.key === "我的名字")?.value;
       const callUser = facts.find(f => f.key === "称呼用户为")?.value;
-      return json(res, { level, emoji, factCount, myName, callUser, facts });
+      const totalCategories = 10;
+      const catKeys = [
+        ["姓名","名字","年龄","性别","生日","城市","职业","工作"],
+        ["星座","属相","八字","MBTI","血型"],
+        ["性格","内向","外向","理性","感性"],
+        ["喜欢","讨厌","食物","音乐","电影","爱好"],
+        ["信条","底线","原则","价值"],
+        ["家人","伴侣","朋友","同事"],
+        ["纪念日","转折","经历"],
+        ["目标","计划","梦想","在忙"],
+        ["心情","情绪","压力","状态"],
+        ["命理","五行","运势"],
+      ];
+      const filledCategories = catKeys.filter(keys => facts.some(f => keys.some(k => f.key.includes(k)))).length;
+      const completeness = Math.round(filledCategories / totalCategories * 100);
+      return json(res, { level, emoji, factCount, myName, callUser, completeness, filledCategories, totalCategories });
     }
 
     if (url.startsWith("/api/chat/history") && method === "GET") {
@@ -206,14 +266,10 @@ export function startServer(config: Config, port: number, configPath?: string) {
           cleanText = routed.cleanText;
         }
 
-        const reqId = `r${++nextReqId}`;
-        activeReqId = reqId;
-        logActivity("web_chat", agentId, msg.slice(0, 80), reqId);
-        try {
-          const reply = await runAgent(config, `web:${body.sessionId ?? "default"}`, agentId, cleanText);
-          logActivity("web_reply", agentId, reply.slice(0, 150), reqId);
-          return json(res, { reply, agentId });
-        } finally { activeReqId = ""; }
+        logActivity("user_in", agentId, msg.slice(0, 120), "web");
+        const reply = await runAgent(config, `web:${body.sessionId ?? "default"}`, agentId, cleanText);
+        logActivity("agent_out", agentId, reply.slice(0, 150), "web");
+        return json(res, { reply, agentId });
       } catch (e: any) { return json(res, { error: e.message }, 500); }
     }
 
@@ -228,6 +284,8 @@ export function startServer(config: Config, port: number, configPath?: string) {
     }
     json(res, { error: "not found" }, 404);
   });
+
+  logActivity("system", "server", `🪼 OmeClaw 启动 · ${listAgents(config).length} agents · port ${port}`);
 
   server.listen(port, () => {
     console.log(`\n  🪼 OmeClaw v0.4.0 — Agent Operating System`);
