@@ -183,7 +183,7 @@ export function startServer(config: Config, port: number, _configPath?: string) 
   });
 
   server.listen(port, () => {
-    console.log(`\n  🐾 OmeClaw v0.4.0 — Agent Operating System`);
+    console.log(`\n  ⭕▸ OmeClaw v0.4.0 — Agent Operating System`);
     console.log(`  ──────────────────────────────────────────`);
     console.log(`  📊 Dashboard:   http://localhost:${port}`);
     console.log(`  🔌 API:         http://localhost:${port}/api/status`);

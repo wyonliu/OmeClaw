@@ -4,7 +4,7 @@
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License">
 </p>
 
-<h1 align="center">🐾 OmeClaw</h1>
+<h1 align="center">⭕▸ OmeClaw</h1>
 
 <p align="center">
   <strong>Agent Operating System</strong> — 多智能体编排 · 任意模型 · 无限记忆 · 可插拔网关
@@ -13,6 +13,38 @@
 <p align="center">
   一键创建你的 AI 分身，支持飞书/Telegram/Discord，无需 Docker
 </p>
+
+---
+
+## 📊 与同类项目对比
+
+| 维度 | OpenClaw | NanoClaw | OpenFang | ZeroClaw | **OmeClaw** |
+|------|----------|----------|----------|----------|-------------|
+| **GitHub Stars** | ~238K | ~16K | 新项目 | ~21K | 新项目 |
+| **代码规模** | 50万行 | ~500行 | 13.7万行 Rust | ~3万行 Rust | **~1400行 TS** |
+| **语言** | TypeScript | Python | Rust | Rust | **TypeScript** |
+| **多智能体编排** | ❌ | Agent Swarms | 30+ 预设 Agent | ❌ | **✅ Agent0 + delegate** |
+| **模型** | Claude 为主 | Claude | 26 提供商 | 22 提供商 | **任意 OpenAI 兼容** |
+| **中国网关** | ❌ | WhatsApp | 40 通道 | 多通道 | **✅ 飞书 WebSocket** |
+| **记忆** | Markdown 文件 | 基础 | SQLite+向量 | SQLite FTS5 | **SQLite + 摘要压缩** |
+| **Docker** | 必需 | 需容器 | 单二进制 | 单二进制 | **❌ 零依赖** |
+| **上手时间** | 分钟级 | 分钟级 | 需 Rust 生态 | 需 Rust 生态 | **秒级 `npx create`** |
+
+**OmeClaw 定位**：极简、可扩展、中国友好。不追求大而全，而是「够用且能长」—— 核心能力在 ~1400 行内实现，方便二次开发与社区贡献。
+
+---
+
+## 🔮 能否爆火？还差什么？
+
+**客观评估**：短期内很难复制 OpenClaw 的 20 万星（84 天达成）—— 那背后有 Anthropic 背书、多语言多端生态、强运营和社区。OmeClaw 的差异点是**极简 + 中国场景**，更适合在细分市场积累用户和口碑。
+
+**要更接近爆款，建议补齐**：
+
+1. **视频 Demo + 一键部署**：一个 2 分钟 Demo 视频 + `npx omeclaw create && omeclaw start` 的流畅体验
+2. **飞书/企微开箱即用**：提供更详细的飞书配置向导，甚至考虑企微适配
+3. **MCP 桥接**：接入 Model Context Protocol，让工具生态与主流对齐
+4. **中文文档 + 案例**：从「AI 分身」「团队助手」等场景切入的完整教程
+5. **社区与运营**：Discord/微信群、示例项目合集、定期更新日志
 
 ---
 
@@ -132,8 +164,8 @@ agents:
 ## 📜 开发
 
 ```bash
-git clone https://github.com/wyonliu/omeclaw.git
-cd omeclaw
+git clone https://github.com/wyonliu/OmeClaw.git
+cd OmeClaw
 npm install
 npm run build
 npm link

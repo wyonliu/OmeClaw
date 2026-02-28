@@ -6,7 +6,7 @@ import { loadConfig, loadEnv } from "./config.js";
 import { startServer } from "./server.js";
 
 const program = new Command();
-program.name("omeclaw").description("🐾 OmeClaw — Agent Operating System").version("0.4.0");
+program.name("omeclaw").description("⭕▸ OmeClaw — Agent Operating System").version("0.4.0");
 
 program
   .command("create [dir]")
