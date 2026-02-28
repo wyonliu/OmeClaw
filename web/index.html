@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OmeClaw — Agent OS</title>
+  <title>OmeClaw — 你的专属分身</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪼</text></svg>">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -11,13 +11,19 @@
   <div class="app">
     <aside class="sidebar">
       <div class="logo">🪼 OmeClaw</div>
+      <div class="bond-card" id="bond-card">
+        <div class="bond-emoji" id="bond-emoji">🫧</div>
+        <div class="bond-info">
+          <div class="bond-name" id="bond-name">还没名字</div>
+          <div class="bond-level" id="bond-level">初见</div>
+        </div>
+      </div>
       <div class="sidebar-section">
-        <div class="section-title">Navigation</div>
-        <button class="nav-btn active" data-view="chat">💬 Chat</button>
-        <button class="nav-btn" data-view="agents">🤖 Agents</button>
-        <button class="nav-btn" data-view="activity">📋 Activity</button>
-        <button class="nav-btn" data-view="memory">🧠 Memory</button>
-        <button class="nav-btn" data-view="status">📊 System</button>
+        <button class="nav-btn active" data-view="chat">💬 聊天</button>
+        <button class="nav-btn" data-view="agents">🧩 智能体</button>
+        <button class="nav-btn" data-view="activity">📋 动态</button>
+        <button class="nav-btn" data-view="memory">🧠 记忆</button>
+        <button class="nav-btn" data-view="status">📊 系统</button>
       </div>
       <div class="sidebar-section agent-list" id="sidebar-agents"></div>
       <div class="sidebar-footer">
@@ -35,7 +41,7 @@
         </div>
         <div id="messages" class="messages"></div>
         <form id="chat-form" class="chat-input">
-          <input type="text" id="chat-input" placeholder="输入消息... (按 / 聚焦，用 @agent 路由)" autocomplete="off">
+          <input type="text" id="chat-input" placeholder="说点什么..." autocomplete="off">
           <button type="submit" id="send-btn">发送</button>
         </form>
       </div>

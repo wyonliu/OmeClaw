@@ -154,6 +154,11 @@ export function getRecentConversations(limit = 30): Array<{ session_key: string;
   ).all(limit) as any[];
 }
 
+export function getUserFactCount(sessionKey: string): number {
+  const scope = USER_FACTS_PREFIX + sessionKey.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+  return (db.prepare("SELECT COUNT(*) as c FROM knowledge WHERE agent_id = ?").get(scope) as any).c;
+}
+
 export function closeMemory() {
   db?.close();
 }

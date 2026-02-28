@@ -145,12 +145,12 @@ async function loadChatHistory(){
         const name=a?.name||"Ome";
         container.innerHTML=`<div class="welcome-msg">
           <div class="welcome-icon">🪼</div>
-          <h3>你好，我是 ${esc(name)}</h3>
-          <p>我是你的 AI 分身，会记住关于你的一切。<br>给我起个名字，告诉我怎么称呼你，我们开始吧。</p>
+          <h3>嘿 👋</h3>
+          <p>我还没名字呢，你给我起一个？<br>然后跟我聊聊你，让我知道我是谁的分身。</p>
           <div class="welcome-tips">
-            <span data-text="叫你小O">叫你小O</span>
-            <span data-text="叫我老板">叫我老板</span>
-            <span data-text="我是做产品的，喜欢咖啡和跑步">聊聊我自己</span>
+            <span data-text="以后叫你小O吧">给你起个名字</span>
+            <span data-text="叫我老板就行">告诉我怎么叫你</span>
+            <span data-text="最近工作太累了">随便聊聊</span>
           </div>
         </div>`;
       }
@@ -202,7 +202,7 @@ $("#chat-form").addEventListener("submit",e=>{
     ld.innerHTML=`<span class="agent-tag error-tag">Error</span>${esc(err.message)}`;
     ld.classList.remove("loading");ld.classList.add("error");
   })
-  .finally(()=>{pendingChats--;updatePending();});
+  .finally(()=>{pendingChats--;updatePending();loadBond();});
 });
 function updatePending(){
   $("#send-btn").textContent=pendingChats>0?`发送 (${pendingChats})`:"发送";
@@ -289,6 +289,17 @@ $("#refresh-activity")?.addEventListener("click",loadActivity);
 setInterval(()=>{if(document.querySelector("#view-activity.active"))loadActivity();},8000);
 setInterval(loadStatus,15000);
 
+// ─── BOND STATUS ───
+async function loadBond(){
+  try{
+    const d=await(await fetch(`/api/bond?sessionId=${encodeURIComponent(sid)}`)).json();
+    const nameEl=$("#bond-name"),emojiEl=$("#bond-emoji"),levelEl=$("#bond-level");
+    if(nameEl)nameEl.textContent=d.myName||"还没名字";
+    if(emojiEl)emojiEl.textContent=d.emoji||"🫧";
+    if(levelEl)levelEl.textContent=`${d.level} · 记住了${d.factCount}件事`;
+  }catch(e){console.error("loadBond:",e);}
+}
+
 // ─── INIT ───
 loadStatus();
-loadAgents().then(()=>loadChatHistory());
+loadAgents().then(()=>{loadChatHistory();loadBond();});

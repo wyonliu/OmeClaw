@@ -4,7 +4,7 @@ import { resolve, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Config } from "./config.js";
 import { listAgents, routeAgent, runAgent, initAgentBus, agentEvents } from "./agent.js";
-import { initMemory, getMessageCount, searchMemory, getRecentMessages, getHistoryForSession, getRecentConversations } from "./memory.js";
+import { initMemory, getMessageCount, searchMemory, getRecentMessages, getHistoryForSession, getRecentConversations, getUserFacts, getUserFactCount } from "./memory.js";
 import { bus } from "./bus.js";
 import { listTools } from "./tools.js";
 import { createLarkAdapter } from "./gateway/lark.js";
@@ -160,6 +160,23 @@ export function startServer(config: Config, port: number, configPath?: string) {
     if (url.startsWith("/api/memory/search") && method === "GET") {
       const q = new URL(fullUrl, "http://localhost").searchParams.get("q") ?? "";
       return json(res, { results: searchMemory(q, undefined, 20) });
+    }
+
+    if (url.startsWith("/api/bond") && method === "GET") {
+      const params = new URL(fullUrl, "http://localhost").searchParams;
+      const sessionId = params.get("sessionId") ?? "";
+      const key = sessionId ? `web:${sessionId}` : "";
+      const factCount = key ? getUserFactCount(key) : 0;
+      const facts = key ? getUserFacts(key) : [];
+      let level: string, emoji: string;
+      if (factCount === 0) { level = "初见"; emoji = "🫧"; }
+      else if (factCount < 5) { level = "认识中"; emoji = "🪼"; }
+      else if (factCount < 15) { level = "熟悉了"; emoji = "💙"; }
+      else if (factCount < 30) { level = "老朋友"; emoji = "💎"; }
+      else { level = "灵魂伴侣"; emoji = "🌊"; }
+      const myName = facts.find(f => f.key === "我的名字")?.value;
+      const callUser = facts.find(f => f.key === "称呼用户为")?.value;
+      return json(res, { level, emoji, factCount, myName, callUser, facts });
     }
 
     if (url.startsWith("/api/chat/history") && method === "GET") {

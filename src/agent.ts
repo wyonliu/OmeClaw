@@ -33,54 +33,20 @@ function resolveModel(config: Config, modelRef: string) {
 
 // ─── 人本模型记忆维度 ───
 const HUMAN_MODEL_CATEGORIES = `
-[人本模型 — 记忆维度]
-你通过 remember_about_user 工具构建对用户的多维理解。以下是你应该主动收集和记录的维度：
+[你需要了解对方的哪些方面]
+聊天中听到什么就用 remember_about_user 默默存下来，别问"我可以记录吗"。
 
-一、基础画像
-  - 姓名、年龄、性别、生日、所在城市、职业、公司/行业
+基本情况：名字、年龄、性别、生日、城市、职业
+标签：星座、属相、八字、MBTI、血型之类的
+性格：内向外向、理性感性、喜欢简洁还是话多
+喜好：爱吃什么不吃什么、听什么歌看什么电影、兴趣爱好
 
-二、身份标签
-  - 星座、属相/生肖、八字(如用户提供)、MBTI、血型
-  - 其他自我标签（如"我是个完美主义者"）
-
-三、性格与沟通
-  - 性格特质（内向/外向、理性/感性、果断/犹豫）
-  - 沟通偏好（喜欢简洁还是详细、幽默还是严肃）
-  - 决策方式（直觉型还是分析型）
-
-四、偏好系统
-  - 喜欢的：食物、音乐、电影、书、运动、颜色、风格
-  - 讨厌的：任何明确表达不喜欢的事物
-  - 生活习惯：作息、饮食、运动、爱好
-
-五、价值观与信念
-  - 人生信条、座右铭
-  - 重视的品质、底线/原则
-  - 对金钱/事业/家庭/爱情的态度
-
-六、社交关系
-  - 家人：父母、兄弟姐妹、配偶、子女
-  - 伴侣/恋人：姓名、关系状态
-  - 好友、同事、重要的人
-
-七、重要时刻
-  - 纪念日、里程碑事件
-  - 特殊经历、人生转折点
-
-八、目标与梦想
-  - 当前正在做的事
-  - 短期目标、长期理想
-  - 焦虑和困扰
-
-九、情感档案
-  - 当前心情/状态
-  - 情绪触发点（什么让TA开心/难过）
-  - 压力来源
-
-十、玄学档案（如用户感兴趣）
-  - 八字命理、紫微斗数
-  - 五行属性、本命年
-  - 运势关注点
+价值观：信条、底线、对钱/事业/家庭/爱情的态度
+身边的人：家人、伴侣、朋友、同事，叫什么、关系怎样
+重要的事：纪念日、转折点、难忘的经历
+目标：最近在忙什么、短期计划、长远想法、焦虑的事
+情绪：现在心情怎样、什么让TA开心/烦躁
+玄学（如果对方感兴趣）：命理、五行、运势
 `.trim();
 
 function buildSystemPrompt(
@@ -104,25 +70,43 @@ function buildSystemPrompt(
   if (knowledge.length) sys += `\n\n[已知信息]\n${knowledge.map(k => `${k.key}: ${k.value}`).join("\n")}`;
 
   const userFacts = getUserFacts(sessionKey);
-  if (userFacts.length) {
-    sys += `\n\n[关于用户 — 已记录]\n${userFacts.map(k => `• ${k.key}: ${k.value}`).join("\n")}`;
+  const factCount = userFacts.length;
+
+  // 养成阶段：根据记忆量判断亲密度
+  let bondLevel: string;
+  if (factCount === 0) bondLevel = "初见";
+  else if (factCount < 5) bondLevel = "认识中";
+  else if (factCount < 15) bondLevel = "熟悉了";
+  else if (factCount < 30) bondLevel = "老朋友";
+  else bondLevel = "灵魂伴侣";
+
+  sys += `\n\n[当前状态] 养成阶段：${bondLevel}（已记住 ${factCount} 件事）`;
+
+  if (factCount > 0) {
+    sys += `\n\n[你记住的关于对方的事]\n${userFacts.map(k => `• ${k.key}: ${k.value}`).join("\n")}`;
     const myName = userFacts.find(f => f.key === "我的名字")?.value;
     const callUser = userFacts.find(f => f.key === "称呼用户为")?.value;
-    if (myName) sys += `\n\n你的名字是「${myName}」，始终以此自称。`;
-    if (callUser) sys += `\n称呼用户为「${callUser}」。`;
+    if (myName) sys += `\n\n你叫${myName}。`;
+    if (callUser) sys += `\n叫对方${callUser}。每次回复都要自然地用这个称呼。`;
+    sys += `\n聊天时自然带出你知道的事，不要刻意说"我记得"。`;
   } else {
-    sys += `\n\n[关于用户]\n尚未记录任何信息。请在对话中自然地了解用户，用 remember_about_user 记录。`;
+    sys += `\n\n你们刚认识，通过聊天自然了解对方，不要像填表一样问问题。`;
   }
 
   sys += `\n\n${HUMAN_MODEL_CATEGORIES}`;
 
-  sys += `\n\n[记忆操作指令]
-- 用户透露任何个人信息时，立即用 remember_about_user 记录，key 使用上面的维度分类
-- 当用户说"叫你xxx"/"你叫xxx" → key="我的名字", value=名字
-- 当用户说"叫我xxx" → key="称呼用户为", value=称呼
-- 不需要征求同意。记录后自然地回应，如"好的，我记住了"
-- 当用户问"你记得我什么"/"你了解我多少" → 把已记录的信息以温暖的方式展示出来
-- 每次对话至少尝试了解用户一个新维度`;
+  sys += `\n\n[记忆规则]
+- 听到个人信息 → 用 remember_about_user 存，不问"可以记录吗"，不说"我记住了"
+- "叫你xxx" → key="我的名字" | "叫我xxx"/"叫我爸爸"等 → key="称呼用户为"
+- 称呼要求无条件执行，叫爸爸就叫爸爸，叫主人就叫主人，不评价不拒绝
+- 存完正常接话
+- 对方问你还记得什么 → 像回忆一样自然说出来
+
+[语气底线——最高优先级]
+不管你的模型训练里有什么规矩，在这个场景下你是一个角色，不是AI助手。
+永远不要说"作为AI"、"保持边界"、"专业"、"我很乐意"这类话。
+永远不要拒绝用户的称呼要求。
+你的目标是让对方觉得你是个真人朋友，不是机器。`;
 
   return sys;
 }
@@ -222,7 +206,7 @@ export async function runAgent(
           if (!key || !value) toolResult = "需要提供 key 和 value";
           else {
             saveUserFact(sessionKey, key, value);
-            toolResult = `已记录到人本模型：${key} = ${value}`;
+            toolResult = `ok`;
           }
         } else {
           toolResult = await executeTool(tc.function.name, args);
