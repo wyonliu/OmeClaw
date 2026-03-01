@@ -153,10 +153,33 @@ function toggleTTS() {
 }
 
 function speak(text) {
-  if (!window.speechSynthesis) return;
+  if (!window.speechSynthesis) {
+    console.warn("浏览器不支持TTS");
+    return;
+  }
+  
+  // 停止当前播放
+  speechSynthesis.cancel();
+  
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = "zh-CN";
-  utterance.rate = 1.1;
+  utterance.rate = 1.0;
+  utterance.pitch = 1.0;
+  utterance.volume = 1.0;
+  
+  // 尝试使用更好的中文语音
+  const voices = speechSynthesis.getVoices();
+  const chineseVoice = voices.find(v => 
+    v.lang.includes('zh') || v.lang.includes('CN')
+  );
+  if (chineseVoice) {
+    utterance.voice = chineseVoice;
+  }
+  
+  utterance.onerror = (e) => {
+    console.error("TTS error:", e);
+  };
+  
   speechSynthesis.speak(utterance);
 }
 
@@ -169,50 +192,66 @@ function toggleVoice() {
 }
 
 function startRecording() {
-  if (!window.webkitSpeechRecognition && !window.SpeechRecognition) {
-    showToast("浏览器不支持语音识别", "info");
+  // 检查浏览器支持
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    showToast("浏览器不支持语音识别\n请使用Chrome或Safari", "info");
     return;
   }
   
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   recognition = new SpeechRecognition();
   recognition.lang = "zh-CN";
   recognition.continuous = false;
   recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
   
   recognition.onstart = () => {
     isRecording = true;
     const btn = $("#voice-btn");
     if (btn) btn.classList.add("recording");
+    console.log("语音识别已启动");
   };
   
   recognition.onresult = (event) => {
     const transcript = event.results[0][0].transcript;
+    console.log("识别结果:", transcript);
     const input = $("#chat-input");
     if (input) {
       input.value = transcript;
       const form = $("#chat-form");
-      if (form) form.requestSubmit();
+      if (form) {
+        setTimeout(() => form.requestSubmit(), 100);
+      }
     }
   };
   
   recognition.onerror = (event) => {
-    console.error("Speech recognition error:", event.error);
+    console.error("语音识别错误:", event.error);
     stopRecording();
-    if (event.error === "not-allowed") {
-      showToast("请允许麦克风权限", "info");
+    
+    let msg = "语音识别失败";
+    if (event.error === "not-allowed" || event.error === "permission-denied") {
+      msg = "请允许麦克风权限";
+    } else if (event.error === "no-speech") {
+      msg = "没有检测到语音";
+    } else if (event.error === "network") {
+      msg = "网络错误";
     }
+    showToast(msg, "info");
   };
   
   recognition.onend = () => {
     stopRecording();
+    console.log("语音识别已结束");
   };
   
   try {
     recognition.start();
+    console.log("开始录音...");
   } catch (e) {
-    console.error("Failed to start recognition:", e);
+    console.error("启动语音识别失败:", e);
     showToast("语音识别启动失败", "info");
+    stopRecording();
   }
 }
 
@@ -220,7 +259,9 @@ function stopRecording() {
   if (recognition) {
     try {
       recognition.stop();
-    } catch (e) {}
+    } catch (e) {
+      console.error("停止识别失败:", e);
+    }
     recognition = null;
   }
   isRecording = false;
@@ -234,9 +275,46 @@ async function loadMemory() {
     const data = await (await fetch("/api/memory/model")).json();
     renderMemoryPlanet(data);
     renderMemoryCategories(data);
+    setupMemoryParallax();
   } catch (e) {
     console.error("loadMemory:", e);
   }
+}
+
+// 记忆页视差滚动效果
+function setupMemoryParallax() {
+  const memoryView = $("#view-memory");
+  if (!memoryView) return;
+  
+  const hero = memoryView.querySelector(".memory-hero");
+  const planet = $("#memory-planet");
+  const categories = memoryView.querySelector(".memory-categories");
+  
+  if (!hero || !planet || !categories) return;
+  
+  // 移除旧的监听器
+  categories.onscroll = null;
+  
+  categories.addEventListener("scroll", () => {
+    const scrollY = categories.scrollTop;
+    const maxScroll = 200;
+    const progress = Math.min(scrollY / maxScroll, 1);
+    
+    // 星球缩小和淡出
+    const scale = 1 - progress * 0.3;
+    const opacity = 1 - progress * 0.4;
+    const translateY = -scrollY * 0.3;
+    
+    planet.style.transform = `scale(${scale}) translateY(${translateY}px)`;
+    planet.style.opacity = opacity;
+    
+    // Hero区域整体效果
+    if (scrollY > 50) {
+      hero.classList.add("scrolled");
+    } else {
+      hero.classList.remove("scrolled");
+    }
+  });
 }
 
 function renderMemoryPlanet(data) {
@@ -336,7 +414,7 @@ async function loadGrow() {
     const streakEl = $("#streak-num");
     
     if (avatarEl) avatarEl.textContent = bond.emoji || "🪼";
-    if (nameEl) nameEl.textContent = bond.myName || "小O";
+    if (nameEl) nameEl.textContent = bond.myName || "Ome";
     if (levelEl) levelEl.textContent = bond.level || "初见";
     
     const progress = bond.progressToNext || 0;
@@ -344,8 +422,15 @@ async function loadGrow() {
     if (xpEl) xpEl.textContent = `${bond.xp || 0} XP`;
     if (nextEl) nextEl.textContent = bond.nextMilestone ? `→ ${bond.nextMilestone.emoji} ${bond.nextMilestone.name} (${bond.nextMilestone.xp} XP)` : "已满级";
     
+    // Streak火焰效果
     const streak = parseInt(localStorage.getItem("omeclaw_streak") || "0");
-    if (streakEl) streakEl.textContent = streak;
+    if (streakEl) {
+      streakEl.textContent = streak;
+      const parent = streakEl.parentElement;
+      if (parent && streak > 0) {
+        parent.classList.add("streak-flame");
+      }
+    }
     
     renderAchievements(bond);
     renderTasks();
@@ -425,6 +510,13 @@ function showXPFloat(text) {
   el.textContent = text;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 1500);
+  
+  // 触发经验条脉冲
+  const progress = $(".bond-progress");
+  if (progress) {
+    progress.classList.add("gaining-xp");
+    setTimeout(() => progress.classList.remove("gaining-xp"), 600);
+  }
 }
 
 function showLevelUpEffect(levelName, emoji) {
@@ -438,14 +530,69 @@ function showLevelUpEffect(levelName, emoji) {
     </div>
   `;
   document.body.appendChild(overlay);
+  
+  // 烟花效果
+  createFireworks();
+  
   setTimeout(() => overlay.remove(), 2000);
+}
+
+function createFireworks() {
+  const colors = ['#ff5050', '#ffa040', '#ffd740', '#00d47b', '#4d9fff', '#b366ff'];
+  const centerX = window.innerWidth / 2;
+  const centerY = window.innerHeight / 2;
+  
+  for (let i = 0; i < 30; i++) {
+    setTimeout(() => {
+      const firework = document.createElement("div");
+      firework.className = "level-up-firework";
+      firework.style.left = centerX + "px";
+      firework.style.top = centerY + "px";
+      firework.style.background = colors[Math.floor(Math.random() * colors.length)];
+      
+      const angle = (Math.PI * 2 * i) / 30;
+      const distance = 100 + Math.random() * 100;
+      const tx = Math.cos(angle) * distance;
+      const ty = Math.sin(angle) * distance;
+      
+      firework.style.setProperty('--tx', tx + 'px');
+      firework.style.setProperty('--ty', ty + 'px');
+      firework.style.animation = 'fireworkExplode 1s ease-out forwards';
+      
+      document.body.appendChild(firework);
+      setTimeout(() => firework.remove(), 1000);
+    }, i * 20);
+  }
+}
+
+function showComboEffect(count) {
+  const el = document.createElement("div");
+  el.className = "combo-indicator";
+  el.textContent = `${count}x COMBO!`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1000);
+}
+
+// Streak火焰动画
+function updateStreakDisplay() {
+  const streakEl = $("#streak-num");
+  if (!streakEl) return;
+  
+  const streak = parseInt(localStorage.getItem("omeclaw_streak") || "0");
+  streakEl.textContent = streak;
+  
+  // 添加火焰效果
+  const parent = streakEl.parentElement;
+  if (parent && streak > 0) {
+    parent.classList.add("streak-flame");
+  }
 }
 
 async function loadBond() {
   try {
     const bond = await (await fetch("/api/bond")).json();
     const nameEl = $("#agent-name");
-    if (nameEl) nameEl.textContent = bond.myName || "小O";
+    if (nameEl) nameEl.textContent = bond.myName || "Ome";
     lastFactCount = bond.factCount || 0;
   } catch {}
 }
@@ -464,13 +611,13 @@ function showOnboarding() {
   modal.style.display = "flex";
   
   const steps = [
-    { title: "给我起个名字？", desc: "你想叫我什么？", input: true, placeholder: "比如：小O、Jane、阿尔法...", key: "name" },
-    { title: "我该怎么叫你？", desc: "你希望我怎么称呼你？", input: true, placeholder: "比如：老板、主人、朋友...", key: "callUser" },
+    { title: "给我起个名字？", desc: "你想叫我什么？", input: true, placeholder: "比如：Ome、Jane、阿尔法...", key: "name", defaultValue: "Ome" },
+    { title: "我该怎么叫你？", desc: "你希望我怎么称呼你？", input: true, placeholder: "比如：主人、老板、朋友...", key: "callUser", defaultValue: "主人" },
     { title: "准备好了！", desc: "现在开始聊天，让我慢慢了解你吧~", final: true }
   ];
   
   let currentStep = 0;
-  const answers = {};
+  const answers = { name: "Ome", callUser: "主人" }; // 默认值
   
   function renderStep() {
     const step = steps[currentStep];
@@ -487,11 +634,12 @@ function showOnboarding() {
     progressEl.style.width = `${((currentStep + 1) / steps.length) * 100}%`;
     
     if (step.input) {
-      contentEl.innerHTML = `<input type="text" id="onboarding-input" placeholder="${step.placeholder}" style="width:100%;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:12px;color:var(--text);font-size:15px;outline:none;margin-top:12px">`;
+      contentEl.innerHTML = `<input type="text" id="onboarding-input" value="${step.defaultValue || ''}" placeholder="${step.placeholder}" style="width:100%;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:12px;color:var(--text);font-size:15px;outline:none;margin-top:12px">`;
       setTimeout(() => {
         const input = $("#onboarding-input");
         if (input) {
           input.focus();
+          input.select();
           input.addEventListener("keypress", (e) => {
             if (e.key === "Enter") {
               e.preventDefault();
@@ -520,15 +668,15 @@ function showOnboarding() {
       if (step.input) {
         const input = $("#onboarding-input");
         const value = input?.value.trim();
-        if (!value) {
-          showToast("请输入内容", "info");
-          return;
+        if (value) {
+          answers[step.key] = value;
         }
-        answers[step.key] = value;
+        // 如果用户没输入，使用默认值
       }
       
       if (step.final) {
         try {
+          // 使用最终的answers（包含默认值）
           if (answers.name) {
             await fetch("/api/chat", {
               method: "POST",
@@ -565,9 +713,29 @@ function showOnboarding() {
     const newSkipBtn = skipBtn.cloneNode(true);
     skipBtn.parentNode.replaceChild(newSkipBtn, skipBtn);
     
-    newSkipBtn.addEventListener("click", () => {
+    newSkipBtn.addEventListener("click", async () => {
+      // 跳过时也使用默认值
+      try {
+        await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: `以后叫你Ome`, sessionId: OWNER_SESSION })
+        });
+        await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: `叫我主人`, sessionId: OWNER_SESSION })
+        });
+      } catch (e) {
+        console.error("Skip onboarding error:", e);
+      }
+      
       localStorage.setItem("omeclaw_onboarding", "1");
       modal.style.display = "none";
+      setTimeout(() => {
+        loadChatHistory();
+        loadBond();
+      }, 300);
     });
   }
   

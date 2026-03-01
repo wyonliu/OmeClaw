@@ -239,6 +239,7 @@ function buildSystemPrompt(
       sys += `\n\n[可用子Agent]\n${subAgents.map(([id, a]) => `  - ${id}: ${a.name} (${a.role}) — ${a.systemPrompt.slice(0, 50)}`).join("\n")}\n用 delegate_to_agent 给它们派活。`;
     }
     sys += `\n\n[创建新Agent]\n对方说"创建一个Agent叫xxx"时，用 create_agent 工具创建。创建后可以立即用 delegate_to_agent 派任务给它。`;
+    sys += `\n\n[重要：如何使用delegate_to_agent]\n当用户要求某个专业任务时（比如写小说、写代码、分析数据），你应该：\n1. 检查是否有合适的子Agent\n2. 如果有，用 delegate_to_agent 派任务\n3. 等待子Agent返回结果\n4. 把结果转述给用户\n\n例如：用户说"让Seer写个100字小说"，你应该调用 delegate_to_agent(agent_id="seer", task="写一个100字的极致小说")，然后把Seer的回复转述给用户。\n\n绝对不要说"我已经派任务给xxx了"就结束，一定要等结果返回后再回复用户。`;
     sys += `\n\n[定时提醒]\n对方说"X点提醒我做Y"/"过N分钟提醒我"时，用 set_reminder 工具。支持绝对时间和相对时间。`;
   }
 
