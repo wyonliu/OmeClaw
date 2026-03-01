@@ -10,6 +10,29 @@ const MAX_TOOL_ROUNDS = 8;
 
 export const agentEvents = new EventEmitter();
 
+interface AgentRuntimeState {
+  status: "idle" | "running";
+  lastActiveAt: number;
+  lastTaskPreview: string;
+  totalRuns: number;
+}
+const runtimeState = new Map<string, AgentRuntimeState>();
+
+function markAgentState(agentId: string, patch: Partial<AgentRuntimeState>) {
+  const prev = runtimeState.get(agentId) ?? {
+    status: "idle",
+    lastActiveAt: 0,
+    lastTaskPreview: "",
+    totalRuns: 0,
+  };
+  const next = { ...prev, ...patch };
+  runtimeState.set(agentId, next);
+}
+
+export function getAgentRuntimeStates() {
+  return [...runtimeState.entries()].map(([id, s]) => ({ id, ...s }));
+}
+
 // ─── 动态提醒队列 ───
 interface Reminder { id: string; time: number; message: string; agentId: string; done?: boolean }
 const reminders: Reminder[] = [];
@@ -200,6 +223,48 @@ function buildSystemPrompt(
   return sys;
 }
 
+function stripDsml(raw: string): string {
+  if (!raw.includes("DSML")) return raw;
+  return raw
+    .replace(/<｜DSML｜function_calls>[\s\S]*?<\/｜DSML｜function_calls>/g, "")
+    .replace(/<\|DSML\|function_calls>[\s\S]*?<\/\|DSML\|function_calls>/g, "")
+    .trim();
+}
+
+function extractFallbackFacts(text: string): Array<{ key: string; value: string }> {
+  const facts: Array<{ key: string; value: string }> = [];
+  const t = text.trim();
+  if (!t) return facts;
+
+  const myName = t.match(/(?:你叫|叫你|给你起名|给你改名|以后叫你)\s*([^\s，。,.!?？！]{1,16})/);
+  if (myName) facts.push({ key: "我的名字", value: myName[1] });
+  const callUser = t.match(/(?:叫我|称呼我)\s*([^\s，。,.!?？！]{1,16})/);
+  if (callUser) facts.push({ key: "称呼用户为", value: callUser[1] });
+  const relation = t.match(/你是我的([^\s，。,.!?？！]{1,16})/);
+  if (relation) facts.push({ key: "关系定义", value: relation[1] });
+
+  const mbti = t.match(/\b([IE][NS][FT][JP])\b/i);
+  if (mbti) facts.push({ key: "MBTI", value: mbti[1].toUpperCase() });
+
+  const zodiac = t.match(/我属([鼠牛虎兔龙蛇马羊猴鸡狗猪])/);
+  if (zodiac) facts.push({ key: "属相", value: zodiac[1] });
+
+  const emotionHints = [
+    { pattern: /(崩溃|烦死|焦虑|压力大|累死|难受|低落|抑郁)/, value: "近期情绪偏负面，压力较高" },
+    { pattern: /(开心|兴奋|满足|轻松|幸福)/, value: "近期情绪偏积极" },
+  ];
+  for (const h of emotionHints) {
+    if (h.pattern.test(t)) facts.push({ key: "近期情绪", value: h.value });
+  }
+
+  if (/(熬夜|凌晨|睡不着|失眠)/.test(t)) facts.push({ key: "作息", value: "可能存在晚睡或睡眠不稳" });
+  if (/(加班|开会|出差|赶项目|ddl|deadline)/i.test(t)) facts.push({ key: "近期关注", value: "工作任务强度较高" });
+  if (/(周末|休息|宅家|出去玩)/.test(t)) facts.push({ key: "休息偏好", value: "会在周末主动安排恢复性活动" });
+  if (/(哈哈|笑死|笑哭)/.test(t)) facts.push({ key: "表达风格", value: "对话风格偏口语化、带情绪表达" });
+
+  return facts.slice(0, 5);
+}
+
 // ─── remember_about_user 工具定义 ───
 const REMEMBER_USER_TOOL: ToolDef = {
   type: "function",
@@ -281,6 +346,12 @@ export async function runAgent(
   if (!resolved) return `Agent "${agentId}" 的模型配置无效`;
 
   saveMessage(sessionKey, agentId, "user", userMessage);
+  markAgentState(agentId, {
+    status: "running",
+    lastActiveAt: Date.now(),
+    lastTaskPreview: userMessage.slice(0, 120),
+    totalRuns: (runtimeState.get(agentId)?.totalRuns ?? 0) + 1,
+  });
 
   const history = getHistory(sessionKey, agentId, 30);
   const summaries = getSummaries(agentId, 3);
@@ -376,6 +447,14 @@ export async function runAgent(
       }
     }
 
+    finalContent = stripDsml(finalContent);
+    if (!finalContent) finalContent = "我在这，继续和我说说。";
+
+    // 兜底记忆抽取：防止模型忘记调用 remember_about_user
+    for (const f of extractFallbackFacts(userMessage)) {
+      saveUserFact(sessionKey, f.key, f.value);
+    }
+
     saveMessage(sessionKey, agentId, "assistant", finalContent);
 
     const total = getHistory(sessionKey, agentId, 999).length;
@@ -383,8 +462,10 @@ export async function runAgent(
       void compactMemory(agentId, sessionKey, resolved.modelConfig, resolved.modelName).catch(() => {});
     }
 
+    markAgentState(agentId, { status: "idle", lastActiveAt: Date.now() });
     return finalContent;
   } catch (err: any) {
+    markAgentState(agentId, { status: "idle", lastActiveAt: Date.now() });
     return `[错误] ${err.message ?? err}`;
   }
 }

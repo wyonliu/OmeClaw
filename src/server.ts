@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { resolve, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Config } from "./config.js";
-import { listAgents, routeAgent, runAgent, initAgentBus, agentEvents, startHeartbeat, getReminders } from "./agent.js";
+import { listAgents, routeAgent, runAgent, initAgentBus, agentEvents, startHeartbeat, getReminders, getAgentRuntimeStates } from "./agent.js";
 import { initMemory, getMessageCount, searchMemory, getRecentMessages, getHistoryForSession, getMergedHistory, getUserFacts, getUserFactCount, getMessagesSince } from "./memory.js";
 import { bus } from "./bus.js";
 import { listTools } from "./tools.js";
@@ -19,7 +19,7 @@ const MIME: Record<string, string> = {
   ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png",
 };
 
-interface ActivityLog { time: number; type: string; agent: string; detail: string; source?: string }
+interface ActivityLog { time: number; type: string; agent: string; detail: string; source?: string; thread?: string }
 const activityLog: ActivityLog[] = [];
 
 interface EvolutionEvent { time: number; type: string; detail: string; emoji: string }
@@ -30,8 +30,8 @@ function logEvolution(type: string, detail: string, emoji: string) {
 }
 
 let larkLogChatId = "";
-function logActivity(type: string, agent: string, detail: string, source?: string) {
-  activityLog.push({ time: Date.now(), type, agent, detail, source });
+function logActivity(type: string, agent: string, detail: string, source?: string, thread?: string) {
+  activityLog.push({ time: Date.now(), type, agent, detail, source, thread });
   if (activityLog.length > 1000) activityLog.splice(0, 500);
 }
 
@@ -86,10 +86,10 @@ export function startServer(config: Config, port: number, configPath?: string) {
 
   const OWNER_SESSION = "owner";
   const onMessage = async (msg: GatewayMessage) => {
-    logActivity("user_in", msg.gateway, `${msg.text.slice(0, 120)}`, msg.gateway);
+    logActivity("user_in", msg.gateway, `${msg.text.slice(0, 120)}`, msg.gateway, msg.chatId || msg.senderId);
     const { agentId, cleanText } = routeAgent(config, msg.text);
     const reply = await runAgent(config, OWNER_SESSION, agentId, cleanText);
-    logActivity("agent_out", agentId, reply.slice(0, 150), msg.gateway);
+    logActivity("agent_out", agentId, reply.slice(0, 150), msg.gateway, msg.chatId || msg.senderId);
     return reply;
   };
 
@@ -139,9 +139,11 @@ export function startServer(config: Config, port: number, configPath?: string) {
     // --- API Routes ---
 
     if (url === "/api/status" && method === "GET") {
+      const runtime = getAgentRuntimeStates();
       return json(res, {
         status: "running", version: "0.4.0", uptime: process.uptime(),
         agents: listAgents(config).map(a => ({ id: a.id, name: a.name, role: a.role })),
+        agentRuntime: runtime,
         gateways: allGateways().map(g => g.name),
         tools: listTools().map(t => t.name),
         memory: { messages: getMessageCount() },
@@ -193,6 +195,23 @@ export function startServer(config: Config, port: number, configPath?: string) {
 
     if (url === "/api/agents" && method === "GET") {
       return json(res, { agents: listAgents(config) });
+    }
+    if (url === "/api/agents/state" && method === "GET") {
+      const runtimeById = new Map(getAgentRuntimeStates().map(s => [s.id, s]));
+      return json(res, {
+        agents: listAgents(config).map(a => {
+          const rt = runtimeById.get(a.id);
+          return {
+            id: a.id,
+            name: a.name,
+            role: a.role,
+            status: rt?.status ?? "idle",
+            lastActiveAt: rt?.lastActiveAt ?? 0,
+            totalRuns: rt?.totalRuns ?? 0,
+            lastTaskPreview: rt?.lastTaskPreview ?? "",
+          };
+        }),
+      });
     }
 
     if (url === "/api/tools" && method === "GET") {
@@ -312,7 +331,7 @@ export function startServer(config: Config, port: number, configPath?: string) {
 
     if (url.startsWith("/api/chat/poll") && method === "GET") {
       const sinceId = Number(new URL(fullUrl, "http://localhost").searchParams.get("since") ?? "0");
-      const newMsgs = getMessagesSince(sinceId);
+      const newMsgs = getMessagesSince(sinceId, 100, OWNER_SESSION);
       return json(res, { messages: newMsgs, latestId: newMsgs.length ? newMsgs[newMsgs.length - 1].id : sinceId });
     }
 
@@ -350,9 +369,9 @@ export function startServer(config: Config, port: number, configPath?: string) {
           cleanText = routed.cleanText;
         }
 
-        logActivity("user_in", agentId, msg.slice(0, 120), "web");
+        logActivity("user_in", agentId, msg.slice(0, 120), "web", OWNER_SESSION);
         const reply = await runAgent(config, OWNER_SESSION, agentId, cleanText);
-        logActivity("agent_out", agentId, reply.slice(0, 150), "web");
+        logActivity("agent_out", agentId, reply.slice(0, 150), "web", OWNER_SESSION);
         return json(res, { reply, agentId });
       } catch (e: any) { return json(res, { error: e.message }, 500); }
     }

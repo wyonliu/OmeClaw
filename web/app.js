@@ -1,6 +1,27 @@
 const $=s=>document.querySelector(s),$$=s=>document.querySelectorAll(s);
 const CHAT_SESSION="owner";
 let curAgent="",agents=[],pendingChats=0,lastMsgId=0;
+let agentStateById={};
+const seenMsgIds=new Set();
+const recentLocalUserMessages=[];
+const recentLocalAssistantMessages=[];
+
+function rememberRecent(list,text){
+  list.push({text,time:Date.now()});
+  while(list.length>20)list.shift();
+}
+function isRecentLocalEcho(list,text,windowMs=15000){
+  const now=Date.now();
+  return list.some(x=>x.text===text&&(now-x.time)<windowMs);
+}
+function markSeen(id){
+  if(!id)return;
+  seenMsgIds.add(id);
+  if(seenMsgIds.size>800){
+    const arr=[...seenMsgIds];
+    for(let i=0;i<300;i++)seenMsgIds.delete(arr[i]);
+  }
+}
 
 // ─── UTILS ───
 function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
@@ -31,7 +52,12 @@ $$(".nav-btn").forEach(b=>{b.addEventListener("click",()=>switchView(b.dataset.v
 // ─── AGENTS ───
 async function loadAgents(){
   try{
-    const r=await(await fetch("/api/agents")).json();agents=r.agents||[];
+    const [r,rs]=await Promise.all([
+      (await fetch("/api/agents")).json(),
+      (await fetch("/api/agents/state")).json().catch(()=>({agents:[]})),
+    ]);
+    agents=r.agents||[];
+    agentStateById=Object.fromEntries((rs.agents||[]).map(a=>[a.id,a]));
     const sel=$("#agent-select");
     sel.innerHTML=agents.map(a=>`<option value="${a.id}"${a.id===curAgent?" selected":""}>${a.name} [${a.role}]</option>`).join("");
     if(!curAgent||!agents.find(a=>a.id===curAgent))curAgent=agents[0]?.id??"";
@@ -49,7 +75,11 @@ function updateChatHeader(){
 function renderSidebar(){
   const sb=$("#sidebar-agents");
   sb.innerHTML=`<div class="section-title">Agents (${agents.length})</div>`+
-    agents.map(a=>`<div class="agent-item${a.id===curAgent?" active":""}" data-id="${a.id}"><span class="dot ${a.role}"></span><span>${a.name}</span></div>`).join("");
+    agents.map(a=>{
+      const st=agentStateById[a.id]?.status||"idle";
+      const run=agentStateById[a.id]?.totalRuns||0;
+      return `<div class="agent-item${a.id===curAgent?" active":""}" data-id="${a.id}"><span class="dot ${a.role} ${st==="running"?"live":""}"></span><span>${a.name}${st==="running"?" · 思考中":""}${run?` · ${run}`:""}</span></div>`;
+    }).join("");
   sb.querySelectorAll(".agent-item").forEach(el=>{el.addEventListener("click",()=>{
     curAgent=el.dataset.id;$("#agent-select").value=curAgent;
     sb.querySelectorAll(".agent-item").forEach(x=>x.classList.remove("active"));el.classList.add("active");
@@ -58,12 +88,23 @@ function renderSidebar(){
 }
 function renderAgentsGrid(){
   const grid=$("#agents-grid");if(!grid)return;
-  grid.innerHTML=agents.map(a=>`<div class="card">
+  grid.innerHTML=agents.map(a=>{
+    const st=agentStateById[a.id]||{};
+    const status=st.status==="running"?"运行中":"待命";
+    const aliveCls=st.status==="running"?"alive":"idle";
+    return `<div class="card">
     <div class="card-header"><h3>${esc(a.name)}</h3><span class="tag role">${a.role}</span></div>
+    <div class="agent-live ${aliveCls}">
+      <span class="live-dot"></span>
+      <span class="live-text">${status}</span>
+      <span class="live-time">${st.lastActiveAt?timeFmt(st.lastActiveAt):"暂无"}</span>
+      <span class="live-runs">#${st.totalRuns||0}</span>
+    </div>
     <p>${esc(a.systemPrompt.slice(0,150))}${a.systemPrompt.length>150?"...":""}</p>
     <div class="card-tags"><span class="tag model">${esc(a.model)}</span>
     ${(a.tools||[]).map(t=>`<span class="tag tool">${esc(t)}</span>`).join("")}</div>
-  </div>`).join("");
+  </div>`;
+  }).join("");
 }
 function setConn(ok){
   $("#conn-status").textContent=ok?"Connected":"Disconnected";
@@ -128,13 +169,24 @@ async function loadActivity(){
     const data=await(await fetch("/api/activity")).json();
     const items=data.timeline||[];
     if(!items.length){el.innerHTML=`<p class="empty-msg">暂无日志</p>`;return;}
-    let html="";
+    const groups={};
     for(const it of items){
-      const t=timeFmt(it.time);
-      const meta=LOG_META[it.type]||LOG_META.system;
-      const src=it.source?`<span class="tl-src tl-src-${esc(it.source)}">${esc(it.source)}</span>`:"";
-      const detail=esc(it.detail).slice(0,500);
-      html+=`<div class="tl-row ${meta.cls}"><span class="tl-icon">${meta.icon}</span><span class="tl-time">${t}</span><span class="tl-label">${meta.label}</span>${src}<span class="tl-detail">${detail}</span></div>`;
+      const k=it.thread||`${it.source||"system"}:${it.agent||"unknown"}`;
+      if(!groups[k])groups[k]=[];
+      groups[k].push(it);
+    }
+    const ordered=Object.entries(groups).sort((a,b)=>(a[1][a[1].length-1].time||0)-(b[1][b[1].length-1].time||0));
+    let html="";
+    for(const [thread,logs] of ordered){
+      html+=`<div class="tl-thread"><div class="tl-thread-title">🧵 ${esc(thread)}</div>`;
+      for(const it of logs){
+        const t=timeFmt(it.time);
+        const meta=LOG_META[it.type]||LOG_META.system;
+        const src=it.source?`<span class="tl-src tl-src-${esc(it.source)}">${esc(it.source)}</span>`:"";
+        const detail=esc(it.detail).slice(0,500);
+        html+=`<div class="tl-row ${meta.cls}"><span class="tl-icon">${meta.icon}</span><span class="tl-time">${t}</span><span class="tl-label">${meta.label}</span>${src}<span class="tl-detail">${detail}</span></div>`;
+      }
+      html+=`</div>`;
     }
     el.innerHTML=html;
     el.scrollTop=el.scrollHeight;
@@ -159,6 +211,7 @@ async function loadChatHistory(){
     const resp=await fetch(`/api/chat/history?merged=1`);
     const {messages}=await resp.json();
     const container=$("#messages");
+    seenMsgIds.clear();
     if(!messages||!messages.length){
       if(!container.children.length||container.querySelector(".welcome-msg")){
         container.innerHTML=`<div class="welcome-msg">
@@ -176,6 +229,7 @@ async function loadChatHistory(){
     }
     let html="";
     for(const m of messages){
+      if(m.id)markSeen(m.id);
       const agent=m.agent_id||"";
       if(m.role==="user") html+=`<div class="msg user">${esc(m.content)}</div>`;
       else html+=`<div class="msg assistant">${agent?`<span class="agent-tag">${esc(agent)}</span>`:""}${formatMsg(m.content)}</div>`;
@@ -199,8 +253,15 @@ async function pollNewMessages(){
     const welcome=container.querySelector(".welcome-msg");
     if(welcome)welcome.remove();
     for(const m of data.messages){
-      if(m.role==="user") addMsg("user",esc(m.content));
-      else addMsg("assistant",`${m.agent_id?`<span class="agent-tag">${esc(m.agent_id)}</span>`:""}${formatMsg(m.content)}`);
+      if(m.id&&seenMsgIds.has(m.id))continue;
+      if(m.id)markSeen(m.id);
+      if(m.role==="user"){
+        if(isRecentLocalEcho(recentLocalUserMessages,m.content))continue;
+        addMsg("user",esc(m.content));
+      }else{
+        if(isRecentLocalEcho(recentLocalAssistantMessages,m.content))continue;
+        addMsg("assistant",`${m.agent_id?`<span class="agent-tag">${esc(m.agent_id)}</span>`:""}${formatMsg(m.content)}`);
+      }
     }
     lastMsgId=data.latestId||lastMsgId;
   }catch{}
@@ -219,6 +280,7 @@ $("#chat-form").addEventListener("submit",e=>{
 
   const agentName=agents.find(a=>a.id===curAgent)?.name??curAgent;
   addMsg("user",esc(text));
+  rememberRecent(recentLocalUserMessages,text);
   const ld=addMsg("assistant",thinkingHtml(agentName));
   ld.classList.add("loading");
   pendingChats++;updatePending();
@@ -232,6 +294,7 @@ $("#chat-form").addEventListener("submit",e=>{
       ld.classList.add("error");
     }else{
       ld.innerHTML=`<span class="agent-tag">${esc(data.agentId)}</span>${formatMsg(data.reply??"No response")}`;
+      rememberRecent(recentLocalAssistantMessages,data.reply??"");
     }
     ld.classList.remove("loading");
     $("#messages").scrollTop=$("#messages").scrollHeight;
@@ -356,6 +419,47 @@ function showToast(msg,type="info"){
   setTimeout(()=>{t.classList.remove("show");setTimeout(()=>t.remove(),300);},3000);
 }
 
+// ─── 60秒引导式人格测试 ───
+const ONBOARDING_KEY="omeclaw_onboarding_done_v1";
+const onboardingSteps=[
+  {key:"call_user",title:"我该怎么称呼你？",placeholder:"例如：爸爸、老板、小王…",hint:"这个称呼会立刻用于后续对话。"},
+  {key:"relationship",title:"你希望我是什么关系？",placeholder:"例如：分身、伴侣、搭子、影子…",hint:"你定义关系，我就按这个关系和你说话。"},
+  {key:"mbti",title:"你的MBTI是？（可跳过）",placeholder:"例如：INTJ",hint:"会写入人格层记忆，影响后续风格。"},
+];
+let onboardingIdx=0,onboardingFacts={};
+
+function renderOnboarding(){
+  const modal=$("#onboarding-modal"),stepEl=$("#onboarding-step"),bar=$("#onboarding-progress");
+  if(!modal||!stepEl||!bar)return;
+  const s=onboardingSteps[onboardingIdx];
+  bar.style.width=`${Math.round((onboardingIdx/onboardingSteps.length)*100)}%`;
+  stepEl.innerHTML=`<div class="onboarding-step"><h3>${esc(s.title)}</h3><p>${esc(s.hint)}</p><input class="onboarding-input" id="onboarding-input" placeholder="${esc(s.placeholder)}"></div>`;
+  const input=$("#onboarding-input");
+  if(input)input.value=onboardingFacts[s.key]||"";
+}
+async function finishOnboarding(skip=false){
+  const modal=$("#onboarding-modal");
+  if(modal)modal.style.display="none";
+  localStorage.setItem(ONBOARDING_KEY,"1");
+  if(skip)return;
+  const snippets=[];
+  if(onboardingFacts.call_user)snippets.push(`以后叫我${onboardingFacts.call_user}`);
+  if(onboardingFacts.relationship)snippets.push(`你是我的${onboardingFacts.relationship}`);
+  if(onboardingFacts.mbti)snippets.push(`我的MBTI是${onboardingFacts.mbti}`);
+  if(!snippets.length)return;
+  $("#chat-input").value=snippets.join("，");
+  $("#chat-form").requestSubmit();
+}
+$("#onboarding-next")?.addEventListener("click",()=>{
+  const s=onboardingSteps[onboardingIdx];
+  const val=($("#onboarding-input")?.value||"").trim();
+  if(val)onboardingFacts[s.key]=val;
+  onboardingIdx++;
+  if(onboardingIdx>=onboardingSteps.length)return void finishOnboarding(false);
+  renderOnboarding();
+});
+$("#onboarding-skip")?.addEventListener("click",()=>finishOnboarding(true));
+
 // ─── MEMORY UPDATE + ACHIEVEMENTS ───
 let lastFactCount=0;
 const ACHIEVEMENTS=[
@@ -423,7 +527,11 @@ document.addEventListener("click",e=>{
   const tip=e.target.closest&&e.target.closest("[data-text]");
   if(tip){
     const text=tip.getAttribute("data-text");
-    if(text){$("#chat-input").value=text;$("#chat-input").focus();}
+    if(text){
+      if(!document.querySelector("#view-chat.active"))switchView("chat");
+      $("#chat-input").value=text;
+      $("#chat-form").requestSubmit();
+    }
   }
 });
 document.addEventListener("keydown",e=>{
@@ -461,4 +569,9 @@ loadAgents().then(()=>{
   switchView(savedView);
   if(savedView==="chat")loadChatHistory();
   loadBond();
+  const shouldOnboard=!localStorage.getItem(ONBOARDING_KEY);
+  if(shouldOnboard){
+    const modal=$("#onboarding-modal");
+    if(modal){modal.style.display="flex";onboardingIdx=0;onboardingFacts={};renderOnboarding();}
+  }
 });

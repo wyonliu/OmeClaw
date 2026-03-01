@@ -47,7 +47,9 @@ export function initMemory(dataDir: string) {
 
 /** 将历史消息统一迁移到 owner session，实现跨端打通 */
 function migrateMessagesToOwner() {
-  const rows = db.prepare("SELECT DISTINCT session_key FROM messages WHERE session_key != 'owner'").all() as Array<{ session_key: string }>;
+  const rows = db.prepare(
+    "SELECT DISTINCT session_key FROM messages WHERE session_key != 'owner' AND (session_key LIKE 'web:%' OR session_key LIKE 'lark:%' OR session_key LIKE 'telegram:%' OR session_key LIKE 'discord:%')"
+  ).all() as Array<{ session_key: string }>;
   if (!rows.length) return;
   const toMigrate = rows.map(r => r.session_key).filter(k => k && k !== "owner");
   if (!toMigrate.length) return;
@@ -140,20 +142,20 @@ export function getRecentMessages(limit = 50): Array<{ session_key: string; agen
   ).all(limit) as any[];
 }
 
-export function getHistoryForSession(sessionKey: string, agentId?: string, limit = 50): Array<{ role: string; content: string; agent_id: string; created_at: number }> {
+export function getHistoryForSession(sessionKey: string, agentId?: string, limit = 50): Array<{ id: number; role: string; content: string; agent_id: string; created_at: number }> {
   const sql = agentId
-    ? "SELECT role, content, agent_id, created_at FROM messages WHERE session_key = ? AND agent_id = ? ORDER BY id ASC LIMIT ?"
-    : "SELECT role, content, agent_id, created_at FROM messages WHERE session_key = ? ORDER BY id ASC LIMIT ?";
+    ? "SELECT id, role, content, agent_id, created_at FROM messages WHERE session_key = ? AND agent_id = ? ORDER BY id ASC LIMIT ?"
+    : "SELECT id, role, content, agent_id, created_at FROM messages WHERE session_key = ? ORDER BY id ASC LIMIT ?";
   const args = agentId ? [sessionKey, agentId, limit] : [sessionKey, limit];
   return db.prepare(sql).all(...args) as any[];
 }
 
 /** 合并所有 session 的消息（跨端统一视图），按时间正序 */
-export function getMergedHistory(agentId?: string, limit = 150): Array<{ role: string; content: string; agent_id: string; created_at: number; session_key?: string }> {
+export function getMergedHistory(agentId?: string, limit = 150, sessionKey = "owner"): Array<{ id: number; role: string; content: string; agent_id: string; created_at: number; session_key?: string }> {
   const sql = agentId
-    ? "SELECT role, content, agent_id, created_at, session_key FROM messages WHERE agent_id = ? ORDER BY id DESC LIMIT ?"
-    : "SELECT role, content, agent_id, created_at, session_key FROM messages ORDER BY id DESC LIMIT ?";
-  const args = agentId ? [agentId, limit] : [limit];
+    ? "SELECT id, role, content, agent_id, created_at, session_key FROM messages WHERE agent_id = ? AND session_key = ? ORDER BY id DESC LIMIT ?"
+    : "SELECT id, role, content, agent_id, created_at, session_key FROM messages WHERE session_key = ? ORDER BY id DESC LIMIT ?";
+  const args = agentId ? [agentId, sessionKey, limit] : [sessionKey, limit];
   const rows = db.prepare(sql).all(...args) as any[];
   return rows.reverse();
 }
@@ -201,8 +203,8 @@ export function getLatestMessageId(): number {
   return row?.maxId ?? 0;
 }
 
-export function getMessagesSince(sinceId: number, limit = 50): Array<{ id: number; role: string; content: string; agent_id: string; created_at: number }> {
-  return db.prepare("SELECT id, role, content, agent_id, created_at FROM messages WHERE id > ? ORDER BY id ASC LIMIT ?").all(sinceId, limit) as any[];
+export function getMessagesSince(sinceId: number, limit = 50, sessionKey = "owner"): Array<{ id: number; role: string; content: string; agent_id: string; created_at: number }> {
+  return db.prepare("SELECT id, role, content, agent_id, created_at FROM messages WHERE id > ? AND session_key = ? ORDER BY id ASC LIMIT ?").all(sinceId, sessionKey, limit) as any[];
 }
 
 export function closeMemory() {

@@ -96,6 +96,19 @@
     </main>
   </div>
   <div id="memory-toast-container"></div>
+  
+  <!-- 60秒引导式人格测试 -->
+  <div id="onboarding-modal" class="modal" style="display:none">
+    <div class="modal-content onboarding-content">
+      <div class="onboarding-progress"><div class="onboarding-progress-fill" id="onboarding-progress"></div></div>
+      <div id="onboarding-step"></div>
+      <div class="onboarding-actions">
+        <button class="btn-secondary" id="onboarding-skip">跳过</button>
+        <button class="btn-primary" id="onboarding-next">下一步</button>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

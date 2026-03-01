@@ -24,6 +24,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .agent-item .dot.orchestrator{background:var(--accent)}
 .agent-item .dot.worker{background:var(--green)}
 .agent-item .dot.specialist{background:var(--orange)}
+.agent-item .dot.live{box-shadow:0 0 0 0 rgba(0,212,123,.7);animation:livePulse 1.6s infinite}
+@keyframes livePulse{0%{box-shadow:0 0 0 0 rgba(0,212,123,.7)}70%{box-shadow:0 0 0 7px rgba(0,212,123,0)}100%{box-shadow:0 0 0 0 rgba(0,212,123,0)}}
 .sidebar-footer{margin-top:auto;padding:12px 8px;font-size:11px;color:var(--text2);display:flex;align-items:center;gap:8px;border-top:1px solid var(--border)}
 .status-dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0}
 .status-dot.off{background:var(--red)}
@@ -81,6 +83,12 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .card h3{font-size:14px;font-weight:600}
 .card p{font-size:12px;color:var(--text2);line-height:1.6;margin:4px 0}
 .card-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:10px}
+.agent-live{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text2);margin-bottom:8px;padding:6px 8px;border-radius:8px;background:var(--surface2)}
+.agent-live .live-dot{width:7px;height:7px;border-radius:50%;background:var(--text2)}
+.agent-live.alive .live-dot{background:var(--green);animation:livePulse 1.6s infinite}
+.agent-live .live-text{font-weight:600}
+.agent-live .live-time{margin-left:auto;font-size:10px;opacity:.8}
+.agent-live .live-runs{font-size:10px;color:var(--accent)}
 .card.stat{text-align:center;padding:20px}
 .stat-label{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px}
 .stat-val{font-size:20px;font-weight:700;color:var(--accent);word-break:break-word}
@@ -130,6 +138,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 
 /* Timeline / Log */
 .timeline{flex:1;overflow-y:auto;padding:8px 12px;display:flex;flex-direction:column;gap:0}
+.tl-thread{border:1px solid var(--border);border-radius:8px;padding:4px;margin-bottom:8px;background:rgba(19,19,26,.45)}
+.tl-thread-title{font-size:10px;color:var(--text2);padding:4px 6px;border-bottom:1px dashed var(--border);margin-bottom:2px}
 .tl-row{display:flex;align-items:center;gap:6px;padding:5px 8px;font-size:12px;line-height:1.5;transition:background .1s;border-radius:3px}
 .tl-row:hover{background:var(--surface2)}
 .tl-icon{flex-shrink:0;width:18px;text-align:center;font-size:12px}
@@ -241,6 +251,23 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 ::-webkit-scrollbar{width:5px}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:var(--border-h)}
+
+/* Onboarding */
+.onboarding-content{max-width:520px;padding:32px}
+.onboarding-progress{height:4px;background:var(--border);border-radius:2px;margin-bottom:24px;overflow:hidden}
+.onboarding-progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--blue));transition:width .3s}
+.onboarding-step{min-height:200px}
+.onboarding-step h3{font-size:18px;margin-bottom:16px;color:var(--text)}
+.onboarding-step p{font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:20px}
+.onboarding-options{display:flex;flex-direction:column;gap:10px}
+.onboarding-option{padding:14px 18px;background:var(--surface2);border:2px solid var(--border);border-radius:var(--r);cursor:pointer;transition:all .2s;font-size:13px;color:var(--text);text-align:left}
+.onboarding-option:hover{border-color:var(--accent);background:var(--accent-bg)}
+.onboarding-option.selected{border-color:var(--accent);background:var(--accent-bg);color:var(--accent);font-weight:500}
+.onboarding-input{width:100%;padding:12px 16px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--r);font-size:13px;outline:none;font-family:var(--font);margin-top:8px}
+.onboarding-input:focus{border-color:var(--accent)}
+.onboarding-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:24px}
+.onboarding-final{text-align:center}
+.onboarding-final .welcome-icon{font-size:64px;margin-bottom:16px}
 
 @media(max-width:640px){
   .sidebar{width:56px;padding:10px 6px}
