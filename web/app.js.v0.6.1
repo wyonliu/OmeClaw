@@ -1,5 +1,4 @@
-// ========== OmeClaw v0.7.0 - 完全重构版 ==========
-// 全局变量
+// ========== 全局变量 ==========
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 const OWNER_SESSION = "owner";
@@ -10,7 +9,6 @@ let ttsEnabled = false;
 let isRecording = false;
 let recognition = null;
 let lastMsgId = 0;
-let lastFactCount = 0;
 
 // ========== 工具函数 ==========
 function esc(s) {
@@ -28,13 +26,12 @@ function formatMsg(text) {
 
 function showToast(msg, type = "info") {
   const container = $("#toast-container");
-  if (!container) return;
   const toast = document.createElement("div");
   toast.className = `toast ${type}`;
   toast.textContent = msg;
   container.appendChild(toast);
   setTimeout(() => {
-    toast.style.opacity = "0";
+    toast.style.animation = "toastSlide .3s reverse";
     setTimeout(() => toast.remove(), 300);
   }, 3000);
 }
@@ -44,10 +41,8 @@ function switchView(view) {
   currentView = view;
   $$(".view").forEach(v => v.classList.remove("active"));
   $$(".nav-tab").forEach(t => t.classList.remove("active"));
-  const viewEl = $(`#view-${view}`);
-  const tabEl = $(`.nav-tab[data-view="${view}"]`);
-  if (viewEl) viewEl.classList.add("active");
-  if (tabEl) tabEl.classList.add("active");
+  $(`#view-${view}`)?.classList.add("active");
+  $(`.nav-tab[data-view="${view}"]`)?.classList.add("active");
   localStorage.setItem("omeclaw_view", view);
   
   if (view === "chat") loadChatHistory();
@@ -59,9 +54,9 @@ $$(".nav-tab").forEach(btn => {
   btn.addEventListener("click", () => switchView(btn.dataset.view));
 });
 
-window.goBack = function() {
+function goBack() {
   $$(".subview.active").forEach(v => v.classList.remove("active"));
-};
+}
 
 // ========== 聊天 ==========
 async function loadChatHistory() {
@@ -69,13 +64,12 @@ async function loadChatHistory() {
     const resp = await fetch(`/api/chat/history?merged=1`);
     const { messages } = await resp.json();
     const container = $("#messages");
-    if (!container) return;
     
     if (!messages || !messages.length) {
       container.innerHTML = `
         <div style="text-align:center;padding:40px 20px;color:var(--text2)">
           <div style="font-size:48px;margin-bottom:16px">🪼</div>
-          <h3 style="font-size:20px;margin-bottom:8px;color:var(--text)">嘿 👋</h3>
+          <h3 style="font-size:20px;margin-bottom:8px">嘿 👋</h3>
           <p style="font-size:15px;line-height:1.6">我还没名字呢，你给我起一个？<br>然后跟我聊聊你，让我知道我是谁的分身。</p>
         </div>`;
       return;
@@ -94,7 +88,6 @@ async function loadChatHistory() {
 
 function addMsg(role, html) {
   const container = $("#messages");
-  if (!container) return null;
   const msg = document.createElement("div");
   msg.className = `msg ${role}`;
   msg.innerHTML = html;
@@ -103,52 +96,47 @@ function addMsg(role, html) {
   return msg;
 }
 
-const chatForm = $("#chat-form");
-if (chatForm) {
-  chatForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const input = $("#chat-input");
-    if (!input) return;
-    const text = input.value.trim();
-    if (!text) return;
+$("#chat-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = $("#chat-input");
+  const text = input.value.trim();
+  if (!text) return;
+  
+  input.value = "";
+  addMsg("user", esc(text));
+  
+  const thinkingMsg = addMsg("assistant", '<div class="thinking-dots"><span></span><span></span><span></span></div>');
+  thinkingMsg.classList.add("thinking");
+  
+  try {
+    const resp = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text, sessionId: OWNER_SESSION, agentId: currentAgent })
+    });
+    const data = await resp.json();
     
-    input.value = "";
-    addMsg("user", esc(text));
+    thinkingMsg.remove();
     
-    const thinkingMsg = addMsg("assistant", '<div class="thinking-dots"><span></span><span></span><span></span></div>');
-    if (thinkingMsg) thinkingMsg.classList.add("thinking");
-    
-    try {
-      const resp = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, sessionId: OWNER_SESSION, agentId: currentAgent })
-      });
-      const data = await resp.json();
-      
-      if (thinkingMsg) thinkingMsg.remove();
-      
-      if (data.error) {
-        addMsg("assistant", `<span style="color:var(--red)">错误: ${esc(data.error)}</span>`);
-      } else {
-        addMsg("assistant", formatMsg(data.reply || "无回复"));
-        if (ttsEnabled && data.reply) speak(data.reply);
-      }
-    } catch (err) {
-      if (thinkingMsg) thinkingMsg.remove();
-      addMsg("assistant", `<span style="color:var(--red)">网络错误: ${esc(err.message)}</span>`);
+    if (data.error) {
+      addMsg("assistant", `<span style="color:var(--red)">错误: ${esc(data.error)}</span>`);
+    } else {
+      addMsg("assistant", formatMsg(data.reply || "无回复"));
+      if (ttsEnabled && data.reply) speak(data.reply);
     }
-    
-    setTimeout(checkMemoryUpdate, 800);
-    setTimeout(loadBond, 1000);
-  });
-}
+  } catch (err) {
+    thinkingMsg.remove();
+    addMsg("assistant", `<span style="color:var(--red)">网络错误: ${esc(err.message)}</span>`);
+  }
+  
+  setTimeout(checkMemoryUpdate, 800);
+  setTimeout(loadBond, 1000);
+});
 
 // ========== 语音 ==========
 function toggleTTS() {
   ttsEnabled = !ttsEnabled;
-  const btn = $("#tts-toggle");
-  if (btn) btn.textContent = ttsEnabled ? "🔊" : "🔇";
+  $("#tts-toggle").textContent = ttsEnabled ? "🔊" : "🔇";
   showToast(ttsEnabled ? "语音播报已开启" : "语音播报已关闭", "info");
 }
 
@@ -170,7 +158,7 @@ function toggleVoice() {
 
 function startRecording() {
   if (!window.webkitSpeechRecognition && !window.SpeechRecognition) {
-    showToast("浏览器不支持语音识别", "info");
+    showToast("浏览器不支持语音识别", "error");
     return;
   }
   
@@ -182,50 +170,34 @@ function startRecording() {
   
   recognition.onstart = () => {
     isRecording = true;
-    const btn = $("#voice-btn");
-    if (btn) btn.classList.add("recording");
+    $("#voice-btn").classList.add("recording");
   };
   
   recognition.onresult = (event) => {
     const transcript = event.results[0][0].transcript;
-    const input = $("#chat-input");
-    if (input) {
-      input.value = transcript;
-      const form = $("#chat-form");
-      if (form) form.requestSubmit();
-    }
+    $("#chat-input").value = transcript;
+    $("#chat-form").requestSubmit();
   };
   
   recognition.onerror = (event) => {
     console.error("Speech recognition error:", event.error);
     stopRecording();
-    if (event.error === "not-allowed") {
-      showToast("请允许麦克风权限", "info");
-    }
   };
   
   recognition.onend = () => {
     stopRecording();
   };
   
-  try {
-    recognition.start();
-  } catch (e) {
-    console.error("Failed to start recognition:", e);
-    showToast("语音识别启动失败", "info");
-  }
+  recognition.start();
 }
 
 function stopRecording() {
   if (recognition) {
-    try {
-      recognition.stop();
-    } catch (e) {}
+    recognition.stop();
     recognition = null;
   }
   isRecording = false;
-  const btn = $("#voice-btn");
-  if (btn) btn.classList.remove("recording");
+  $("#voice-btn").classList.remove("recording");
 }
 
 // ========== 记忆 ==========
@@ -243,6 +215,7 @@ function renderMemoryPlanet(data) {
   const canvas = $("#memory-planet");
   if (!canvas) return;
   
+  // 设置实际尺寸
   canvas.width = 200;
   canvas.height = 200;
   
@@ -293,12 +266,9 @@ function renderMemoryPlanet(data) {
     }
   });
   
-  const pctEl = $("#memory-pct");
-  const countEl = $("#memory-count");
-  const layersEl = $("#memory-layers");
-  if (pctEl) pctEl.textContent = `${data.totalFacts ? Math.round(data.filledCategories / data.totalCategories * 100) : 0}%`;
-  if (countEl) countEl.textContent = data.totalFacts || 0;
-  if (layersEl) layersEl.textContent = `${data.filledCategories || 0}/11`;
+  $("#memory-pct").textContent = `${data.totalFacts ? Math.round(data.filledCategories / data.totalCategories * 100) : 0}%`;
+  $("#memory-count").textContent = data.totalFacts || 0;
+  $("#memory-layers").textContent = `${data.filledCategories || 0}/11`;
 }
 
 function renderMemoryCategories(data) {
@@ -327,25 +297,17 @@ function renderMemoryCategories(data) {
 async function loadGrow() {
   try {
     const bond = await (await fetch("/api/bond")).json();
-    const avatarEl = $("#grow-avatar");
-    const nameEl = $("#grow-name");
-    const levelEl = $("#grow-level");
-    const fillEl = $("#bond-fill");
-    const xpEl = $("#bond-xp");
-    const nextEl = $("#bond-next");
-    const streakEl = $("#streak-num");
-    
-    if (avatarEl) avatarEl.textContent = bond.emoji || "🪼";
-    if (nameEl) nameEl.textContent = bond.myName || "小O";
-    if (levelEl) levelEl.textContent = bond.level || "初见";
+    $("#grow-avatar").textContent = bond.emoji || "🪼";
+    $("#grow-name").textContent = bond.myName || "小O";
+    $("#grow-level").textContent = bond.level || "初见";
     
     const progress = bond.progressToNext || 0;
-    if (fillEl) fillEl.style.width = `${progress}%`;
-    if (xpEl) xpEl.textContent = `${bond.xp || 0} XP`;
-    if (nextEl) nextEl.textContent = bond.nextMilestone ? `→ ${bond.nextMilestone.emoji} ${bond.nextMilestone.name} (${bond.nextMilestone.xp} XP)` : "已满级";
+    $("#bond-fill").style.width = `${progress}%`;
+    $("#bond-xp").textContent = `${bond.xp || 0} XP`;
+    $("#bond-next").textContent = bond.nextMilestone ? `→ ${bond.nextMilestone.emoji} ${bond.nextMilestone.name} (${bond.nextMilestone.xp} XP)` : "已满级";
     
     const streak = parseInt(localStorage.getItem("omeclaw_streak") || "0");
-    if (streakEl) streakEl.textContent = streak;
+    $("#streak-num").textContent = streak;
     
     renderAchievements(bond);
     renderTasks();
@@ -364,20 +326,7 @@ function renderAchievements(bond) {
   ];
   
   const container = $("#achievements-grid");
-  if (!container) return;
   const factCount = bond.factCount || 0;
-  
-  // 检查是否有新解锁的成就
-  const lastFactCountStored = parseInt(localStorage.getItem("omeclaw_last_fact_count") || "0");
-  for (const a of achievements) {
-    if (factCount >= a.threshold && lastFactCountStored < a.threshold) {
-      setTimeout(() => {
-        showToast(`🎉 成就解锁：${a.emoji} ${a.name}`, "achievement");
-        showXPFloat("+100 XP");
-      }, 500);
-    }
-  }
-  localStorage.setItem("omeclaw_last_fact_count", factCount.toString());
   
   container.innerHTML = achievements.map(a => `
     <div class="achievement ${factCount >= a.threshold ? 'unlocked' : 'locked'}">
@@ -395,7 +344,6 @@ function renderTasks() {
   ];
   
   const container = $("#tasks-list");
-  if (!container) return;
   container.innerHTML = tasks.map(t => `
     <div class="task-item ${t.completed ? 'completed' : ''}">
       <div class="task-checkbox"></div>
@@ -406,46 +354,22 @@ function renderTasks() {
 }
 
 // ========== 记忆更新检测 ==========
+let lastFactCount = 0;
 async function checkMemoryUpdate() {
   try {
     const bond = await (await fetch("/api/bond")).json();
     const count = bond.factCount || 0;
     if (lastFactCount > 0 && count > lastFactCount) {
       showToast("🧠 记忆碎片 +1 · 我又了解你多一点了", "achievement");
-      showXPFloat("+50 XP");
     }
     lastFactCount = count;
   } catch {}
 }
 
-// ========== 游戏化动画效果 ==========
-function showXPFloat(text) {
-  const el = document.createElement("div");
-  el.className = "xp-float";
-  el.textContent = text;
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 1500);
-}
-
-function showLevelUpEffect(levelName, emoji) {
-  const overlay = document.createElement("div");
-  overlay.className = "level-up-effect";
-  overlay.innerHTML = `
-    <div class="level-up-content">
-      <div style="font-size:80px;margin-bottom:20px">${emoji}</div>
-      <div>等级提升！</div>
-      <div style="font-size:32px;margin-top:10px">${levelName}</div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-  setTimeout(() => overlay.remove(), 2000);
-}
-
 async function loadBond() {
   try {
     const bond = await (await fetch("/api/bond")).json();
-    const nameEl = $("#agent-name");
-    if (nameEl) nameEl.textContent = bond.myName || "小O";
+    $("#agent-name").textContent = bond.myName || "小O";
     lastFactCount = bond.factCount || 0;
   } catch {}
 }
@@ -454,7 +378,7 @@ async function loadBond() {
 function checkOnboarding() {
   const done = localStorage.getItem("omeclaw_onboarding");
   if (!done) {
-    setTimeout(showOnboarding, 800);
+    setTimeout(showOnboarding, 500);
   }
 }
 
@@ -464,9 +388,25 @@ function showOnboarding() {
   modal.style.display = "flex";
   
   const steps = [
-    { title: "给我起个名字？", desc: "你想叫我什么？", input: true, placeholder: "比如：小O、Jane、阿尔法...", key: "name" },
-    { title: "我该怎么叫你？", desc: "你希望我怎么称呼你？", input: true, placeholder: "比如：老板、主人、朋友...", key: "callUser" },
-    { title: "准备好了！", desc: "现在开始聊天，让我慢慢了解你吧~", final: true }
+    {
+      title: "给我起个名字？",
+      desc: "你想叫我什么？",
+      input: true,
+      placeholder: "比如：小O、Jane、阿尔法...",
+      key: "name"
+    },
+    {
+      title: "我该怎么叫你？",
+      desc: "你希望我怎么称呼你？",
+      input: true,
+      placeholder: "比如：老板、主人、朋友...",
+      key: "callUser"
+    },
+    {
+      title: "准备好了！",
+      desc: "现在开始聊天，让我慢慢了解你吧~",
+      final: true
+    }
   ];
   
   let currentStep = 0;
@@ -493,10 +433,7 @@ function showOnboarding() {
         if (input) {
           input.focus();
           input.addEventListener("keypress", (e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              nextBtn.click();
-            }
+            if (e.key === "Enter") nextBtn.click();
           });
         }
       }, 100);
@@ -511,11 +448,7 @@ function showOnboarding() {
   const skipBtn = $("#onboarding-skip");
   
   if (nextBtn) {
-    // 移除旧的事件监听器
-    const newNextBtn = nextBtn.cloneNode(true);
-    nextBtn.parentNode.replaceChild(newNextBtn, nextBtn);
-    
-    newNextBtn.addEventListener("click", async () => {
+    nextBtn.onclick = async () => {
       const step = steps[currentStep];
       if (step.input) {
         const input = $("#onboarding-input");
@@ -528,6 +461,7 @@ function showOnboarding() {
       }
       
       if (step.final) {
+        // 提交答案
         try {
           if (answers.name) {
             await fetch("/api/chat", {
@@ -558,23 +492,105 @@ function showOnboarding() {
       
       currentStep++;
       renderStep();
-    });
+    };
   }
   
   if (skipBtn) {
-    const newSkipBtn = skipBtn.cloneNode(true);
-    skipBtn.parentNode.replaceChild(newSkipBtn, skipBtn);
-    
-    newSkipBtn.addEventListener("click", () => {
+    skipBtn.onclick = () => {
       localStorage.setItem("omeclaw_onboarding", "1");
       modal.style.display = "none";
-    });
+    };
   }
   
   renderStep();
 }
 
-// ========== 子页面 ==========
+// ========== 初始化 ==========
+async function init() {
+  try {
+    const resp = await fetch("/api/agents");
+    const data = await resp.json();
+    agents = data.agents || [];
+    currentAgent = agents[0]?.id || "";
+  } catch (e) {
+    console.error("init:", e);
+  }
+  
+  // 绑定语音按钮
+  const voiceBtn = $("#voice-btn");
+  if (voiceBtn) {
+    voiceBtn.addEventListener("click", toggleVoice);
+  }
+  
+  // 绑定TTS按钮
+  const ttsBtn = $("#tts-toggle");
+  if (ttsBtn) {
+    ttsBtn.addEventListener("click", toggleTTS);
+  }
+  
+  // 绑定我的页面按钮
+  const mbtiBtn = $("#mbti-test-btn");
+  if (mbtiBtn) {
+    mbtiBtn.addEventListener("click", () => {
+      showToast("MBTI测试开发中...", "info");
+    });
+  }
+  
+  const agentsManageBtn = $("#agents-manage-btn");
+  if (agentsManageBtn) {
+    agentsManageBtn.addEventListener("click", () => {
+      $("#view-agents").classList.add("active");
+      loadAgentsList();
+    });
+  }
+  
+  const activityLogBtn = $("#activity-log-btn");
+  if (activityLogBtn) {
+    activityLogBtn.addEventListener("click", () => {
+      $("#view-activity").classList.add("active");
+      loadActivityLog();
+    });
+  }
+  
+  const themeBtn = $("#theme-btn");
+  if (themeBtn) {
+    themeBtn.addEventListener("click", () => {
+      showToast("主题切换开发中...", "info");
+    });
+  }
+  
+  const aboutBtn = $("#about-btn");
+  if (aboutBtn) {
+    aboutBtn.addEventListener("click", () => {
+      showToast("OmeClaw v0.6.0-mobile\n你的24小时AI分身", "info");
+    });
+  }
+  
+  // 绑定导入/分享按钮
+  const importBtn = $("#import-btn");
+  if (importBtn) {
+    importBtn.addEventListener("click", () => {
+      showToast("数据导入开发中...", "info");
+    });
+  }
+  
+  const shareBtn = $("#share-btn");
+  if (shareBtn) {
+    shareBtn.addEventListener("click", () => {
+      showToast("分享功能开发中...", "info");
+    });
+  }
+  
+  // 恢复上次的视图
+  const savedView = localStorage.getItem("omeclaw_view") || "chat";
+  switchView(savedView);
+  loadBond();
+  
+  // 延迟检查引导
+  setTimeout(checkOnboarding, 800);
+}
+
+// 加载Agent列表（子页面）
 async function loadAgentsList() {
   try {
     const resp = await fetch("/api/agents");
@@ -600,6 +616,7 @@ async function loadAgentsList() {
   }
 }
 
+// 加载活动日志（子页面）
 async function loadActivityLog() {
   try {
     const resp = await fetch("/api/activity");
@@ -632,109 +649,9 @@ async function loadActivityLog() {
   }
 }
 
-// ========== 初始化 ==========
-async function init() {
-  console.log("OmeClaw v0.7.0 初始化...");
-  
-  try {
-    const resp = await fetch("/api/agents");
-    const data = await resp.json();
-    agents = data.agents || [];
-    currentAgent = agents[0]?.id || "";
-  } catch (e) {
-    console.error("init agents:", e);
-  }
-  
-  // 绑定语音按钮
-  const voiceBtn = $("#voice-btn");
-  if (voiceBtn) {
-    voiceBtn.addEventListener("click", (e) => {
-      e.preventDefault();
-      toggleVoice();
-    });
-  }
-  
-  // 绑定TTS按钮
-  const ttsBtn = $("#tts-toggle");
-  if (ttsBtn) {
-    ttsBtn.addEventListener("click", (e) => {
-      e.preventDefault();
-      toggleTTS();
-    });
-  }
-  
-  // 绑定我的页面按钮
-  const mbtiBtn = $("#mbti-test-btn");
-  if (mbtiBtn) {
-    mbtiBtn.addEventListener("click", () => {
-      showToast("MBTI测试开发中...", "info");
-    });
-  }
-  
-  const agentsManageBtn = $("#agents-manage-btn");
-  if (agentsManageBtn) {
-    agentsManageBtn.addEventListener("click", () => {
-      const view = $("#view-agents");
-      if (view) {
-        view.classList.add("active");
-        loadAgentsList();
-      }
-    });
-  }
-  
-  const activityLogBtn = $("#activity-log-btn");
-  if (activityLogBtn) {
-    activityLogBtn.addEventListener("click", () => {
-      const view = $("#view-activity");
-      if (view) {
-        view.classList.add("active");
-        loadActivityLog();
-      }
-    });
-  }
-  
-  const themeBtn = $("#theme-btn");
-  if (themeBtn) {
-    themeBtn.addEventListener("click", () => {
-      showToast("主题切换开发中...", "info");
-    });
-  }
-  
-  const aboutBtn = $("#about-btn");
-  if (aboutBtn) {
-    aboutBtn.addEventListener("click", () => {
-      showToast("OmeClaw v0.7.0\n你的24小时AI分身", "info");
-    });
-  }
-  
-  const importBtn = $("#import-btn");
-  if (importBtn) {
-    importBtn.addEventListener("click", () => {
-      showToast("数据导入开发中...", "info");
-    });
-  }
-  
-  const shareBtn = $("#share-btn");
-  if (shareBtn) {
-    shareBtn.addEventListener("click", () => {
-      showToast("分享功能开发中...", "info");
-    });
-  }
-  
-  // 恢复上次的视图
-  const savedView = localStorage.getItem("omeclaw_view") || "chat";
-  switchView(savedView);
-  loadBond();
-  
-  // 延迟检查引导
-  checkOnboarding();
-  
-  console.log("OmeClaw 初始化完成！");
-}
+// 全局goBack函数
+window.goBack = function() {
+  $$(".subview.active").forEach(v => v.classList.remove("active"));
+};
 
-// 启动
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", init);
-} else {
-  init();
-}
+init();

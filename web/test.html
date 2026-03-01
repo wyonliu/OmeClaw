@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>OmeClaw 功能测试</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #0a0a0f; color: #eee; }
+    .test { margin: 20px 0; padding: 15px; background: #1a1a2a; border-radius: 8px; }
+    .test h3 { margin: 0 0 10px; color: #7c6cf0; }
+    button { padding: 10px 20px; margin: 5px; background: #7c6cf0; color: white; border: none; border-radius: 6px; cursor: pointer; }
+    button:hover { background: #6b5ce0; }
+    .result { margin-top: 10px; padding: 10px; background: #0a0a0f; border-radius: 4px; font-family: monospace; font-size: 12px; }
+    .success { color: #00d47b; }
+    .error { color: #ff5050; }
+  </style>
+</head>
+<body>
+  <h1>🪼 OmeClaw 功能测试</h1>
+  
+  <div class="test">
+    <h3>测试1：API连接</h3>
+    <button onclick="testAPI()">测试 /api/status</button>
+    <div id="api-result" class="result"></div>
+  </div>
+  
+  <div class="test">
+    <h3>测试2：聊天功能</h3>
+    <input type="text" id="chat-input" placeholder="输入消息" style="padding:10px;width:300px;background:#0a0a0f;border:1px solid #2a2a3a;color:#eee;border-radius:6px;">
+    <button onclick="testChat()">发送</button>
+    <div id="chat-result" class="result"></div>
+  </div>
+  
+  <div class="test">
+    <h3>测试3：记忆系统</h3>
+    <button onclick="testMemory()">获取记忆</button>
+    <div id="memory-result" class="result"></div>
+  </div>
+  
+  <div class="test">
+    <h3>测试4：Agent列表</h3>
+    <button onclick="testAgents()">获取Agents</button>
+    <div id="agents-result" class="result"></div>
+  </div>
+  
+  <div class="test">
+    <h3>测试5：语音识别</h3>
+    <button onclick="testVoice()">测试语音API</button>
+    <div id="voice-result" class="result"></div>
+  </div>
+  
+  <script>
+    async function testAPI() {
+      const result = document.getElementById('api-result');
+      try {
+        const resp = await fetch('/api/status');
+        const data = await resp.json();
+        result.innerHTML = `<span class="success">✓ 连接成功</span><br>${JSON.stringify(data, null, 2)}`;
+      } catch (e) {
+        result.innerHTML = `<span class="error">✗ 连接失败: ${e.message}</span>`;
+      }
+    }
+    
+    async function testChat() {
+      const result = document.getElementById('chat-result');
+      const input = document.getElementById('chat-input');
+      const message = input.value.trim();
+      if (!message) {
+        result.innerHTML = '<span class="error">请输入消息</span>';
+        return;
+      }
+      
+      try {
+        result.innerHTML = '发送中...';
+        const resp = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message, sessionId: 'owner' })
+        });
+        const data = await resp.json();
+        if (data.error) {
+          result.innerHTML = `<span class="error">✗ 错误: ${data.error}</span>`;
+        } else {
+          result.innerHTML = `<span class="success">✓ 回复:</span><br>${data.reply}`;
+        }
+      } catch (e) {
+        result.innerHTML = `<span class="error">✗ 请求失败: ${e.message}</span>`;
+      }
+    }
+    
+    async function testMemory() {
+      const result = document.getElementById('memory-result');
+      try {
+        const resp = await fetch('/api/memory/model');
+        const data = await resp.json();
+        result.innerHTML = `<span class="success">✓ 记忆加载成功</span><br>总记忆: ${data.totalFacts}<br>已填维度: ${data.filledCategories}/11`;
+      } catch (e) {
+        result.innerHTML = `<span class="error">✗ 加载失败: ${e.message}</span>`;
+      }
+    }
+    
+    async function testAgents() {
+      const result = document.getElementById('agents-result');
+      try {
+        const resp = await fetch('/api/agents');
+        const data = await resp.json();
+        result.innerHTML = `<span class="success">✓ Agents加载成功</span><br>数量: ${data.agents.length}<br>${data.agents.map(a => `- ${a.name} [${a.role}]`).join('<br>')}`;
+      } catch (e) {
+        result.innerHTML = `<span class="error">✗ 加载失败: ${e.message}</span>`;
+      }
+    }
+    
+    function testVoice() {
+      const result = document.getElementById('voice-result');
+      if (!window.webkitSpeechRecognition && !window.SpeechRecognition) {
+        result.innerHTML = '<span class="error">✗ 浏览器不支持语音识别</span>';
+        return;
+      }
+      result.innerHTML = '<span class="success">✓ 浏览器支持语音识别</span>';
+    }
+  </script>
+</body>
+</html>

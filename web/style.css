@@ -259,34 +259,46 @@ body{
 
 .voice-btn{
   position:relative;
-  width:44px;
-  height:44px;
+  width:48px;
+  height:48px;
   border-radius:50%;
   border:none;
-  background:var(--surface2);
-  color:var(--text);
-  font-size:20px;
+  background:linear-gradient(135deg,#7c6cf0,#4d9fff);
+  color:white;
+  font-size:22px;
   display:flex;
   align-items:center;
   justify-content:center;
   cursor:pointer;
-  transition:all .2s;
+  transition:all .3s cubic-bezier(.4,0,.2,1);
   flex-shrink:0;
+  box-shadow:0 4px 12px rgba(124,108,240,.3);
+}
+
+.voice-btn:hover{
+  transform:scale(1.08);
+  box-shadow:0 6px 16px rgba(124,108,240,.5);
 }
 
 .voice-btn:active{
-  transform:scale(.95);
+  transform:scale(.92);
 }
 
 .voice-btn.recording{
-  background:var(--red);
-  color:#fff;
-  animation:voicePulse 1s infinite;
+  background:linear-gradient(135deg,#ff5050,#ff8080);
+  animation:voicePulse 1.2s ease-in-out infinite;
+  box-shadow:0 4px 16px rgba(255,80,80,.5);
 }
 
 @keyframes voicePulse{
-  0%,100%{box-shadow:0 0 0 0 rgba(255,80,80,.7)}
-  50%{box-shadow:0 0 0 10px rgba(255,80,80,0)}
+  0%,100%{
+    transform:scale(1);
+    box-shadow:0 4px 16px rgba(255,80,80,.5);
+  }
+  50%{
+    transform:scale(1.1);
+    box-shadow:0 6px 20px rgba(255,80,80,.7);
+  }
 }
 
 .voice-wave{
@@ -295,14 +307,14 @@ body{
   inset:0;
   border-radius:50%;
   border:2px solid currentColor;
-  animation:waveExpand 1.5s infinite;
+  animation:waveExpand 1.5s ease-out infinite;
 }
 
 .voice-btn.recording .voice-wave{display:block}
 
 @keyframes waveExpand{
-  0%{transform:scale(1);opacity:1}
-  100%{transform:scale(1.8);opacity:0}
+  0%{transform:scale(1);opacity:.8}
+  100%{transform:scale(2);opacity:0}
 }
 
 #chat-input{
@@ -586,19 +598,81 @@ body{
   gap:8px;
   padding:12px;
   text-align:center;
-  transition:all .2s;
+  transition:all .3s cubic-bezier(.4,0,.2,1);
+  cursor:pointer;
+  position:relative;
+  overflow:hidden;
+}
+
+.achievement::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:linear-gradient(135deg,rgba(124,108,240,.1),rgba(77,159,255,.05));
+  opacity:0;
+  transition:opacity .3s;
+}
+
+.achievement:hover{
+  transform:translateY(-4px);
+  box-shadow:0 8px 16px rgba(0,0,0,.2);
 }
 
 .achievement.unlocked{
   border-color:var(--accent);
   background:var(--accent-bg);
+  animation:achievementUnlock .6s cubic-bezier(.4,0,.2,1);
+}
+
+.achievement.unlocked::before{
+  opacity:1;
+}
+
+.achievement.unlocked:hover{
+  transform:translateY(-4px) scale(1.05);
+}
+
+@keyframes achievementUnlock{
+  0%{
+    transform:scale(.8) rotateY(0deg);
+    opacity:0;
+  }
+  50%{
+    transform:scale(1.1) rotateY(180deg);
+  }
+  100%{
+    transform:scale(1) rotateY(360deg);
+    opacity:1;
+  }
 }
 
 .achievement.locked{
-  opacity:.4;
+  opacity:.3;
+  filter:grayscale(1);
 }
 
-.achievement-icon{font-size:32px}
+.achievement.locked:hover{
+  opacity:.5;
+  transform:translateY(-2px);
+}
+
+.achievement-icon{
+  font-size:32px;
+  transition:transform .3s;
+}
+
+.achievement.unlocked .achievement-icon{
+  animation:iconBounce .6s ease-out;
+}
+
+@keyframes iconBounce{
+  0%,100%{transform:scale(1)}
+  50%{transform:scale(1.3)}
+}
+
+.achievement:hover .achievement-icon{
+  transform:scale(1.1);
+}
 
 .achievement-name{
   font-size:12px;
@@ -910,6 +984,85 @@ body{
   border-color:var(--accent);
   color:var(--accent);
   font-weight:600;
+  animation:toastSlide .3s cubic-bezier(.4,0,.2,1), toastGlow 2s ease-in-out infinite;
+}
+
+@keyframes toastGlow{
+  0%,100%{box-shadow:0 8px 32px rgba(0,0,0,.3)}
+  50%{box-shadow:0 8px 32px rgba(124,108,240,.4), 0 0 20px rgba(124,108,240,.3)}
+}
+
+/* ========== XP增长动画 ========== */
+@keyframes xpFloat{
+  0%{
+    opacity:0;
+    transform:translateY(0) scale(.8);
+  }
+  20%{
+    opacity:1;
+    transform:translateY(-10px) scale(1);
+  }
+  100%{
+    opacity:0;
+    transform:translateY(-40px) scale(.8);
+  }
+}
+
+.xp-float{
+  position:fixed;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  font-size:32px;
+  font-weight:700;
+  color:var(--accent);
+  pointer-events:none;
+  z-index:9999;
+  animation:xpFloat 1.5s ease-out forwards;
+  text-shadow:0 2px 8px rgba(124,108,240,.5);
+}
+
+/* ========== 等级提升动画 ========== */
+@keyframes levelUp{
+  0%{
+    opacity:0;
+    transform:scale(.5) rotate(-10deg);
+  }
+  50%{
+    opacity:1;
+    transform:scale(1.2) rotate(5deg);
+  }
+  100%{
+    opacity:0;
+    transform:scale(.8) rotate(0deg);
+  }
+}
+
+.level-up-effect{
+  position:fixed;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:rgba(0,0,0,.8);
+  z-index:9999;
+  pointer-events:none;
+  animation:fadeOut 2s ease-out forwards;
+}
+
+.level-up-content{
+  font-size:48px;
+  font-weight:700;
+  color:var(--accent);
+  text-align:center;
+  animation:levelUp 2s ease-out forwards;
+  text-shadow:0 4px 16px rgba(124,108,240,.8);
+}
+
+@keyframes fadeOut{
+  0%{opacity:1}
+  70%{opacity:1}
+  100%{opacity:0}
 }
 
 /* ========== 桌面端适配 ========== */
