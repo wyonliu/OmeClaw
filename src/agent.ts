@@ -2,7 +2,7 @@ import type { Config, AgentConfig } from "./config.js";
 import { chatWithTools, type Message, type ToolDef } from "./llm.js";
 import { saveMessage, getHistory, getSummaries, compactMemory, getAllKnowledge, getUserFacts, saveUserFact } from "./memory.js";
 import { bus, type AgentMessage } from "./bus.js";
-import { executeTool, getToolDefs } from "./tools.js";
+import { executeTool, getToolDefs, getTool } from "./tools.js";
 import { EventEmitter } from "node:events";
 
 const COMPACT_THRESHOLD = 60;
@@ -89,6 +89,58 @@ export function getDefaultAgentId(config: Config): string {
   return Object.keys(config.agents)[0] ?? "";
 }
 
+function normalizeAgentId(id: string): string {
+  return id.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function dedupeTools(tools: string[]): string[] {
+  const out: string[] = [];
+  for (const t of tools) {
+    const x = t.trim();
+    if (!x || out.includes(x)) continue;
+    if (!getTool(x)) continue;
+    out.push(x);
+  }
+  return out;
+}
+
+export function createAgentDefinition(
+  config: Config,
+  input: {
+    id: string;
+    name: string;
+    model?: string;
+    systemPrompt?: string;
+    role?: string;
+    tools?: string[];
+  },
+  defaults?: { modelRef?: string; tools?: string[] }
+): { ok: true; id: string } | { ok: false; error: string } {
+  const id = normalizeAgentId(input.id);
+  const name = input.name?.trim();
+  if (!id) return { ok: false, error: "Agent id 无效（仅支持英文/数字/_/-）" };
+  if (!name) return { ok: false, error: "Agent name 必填" };
+  if (config.agents[id]) return { ok: false, error: `Agent "${id}" 已存在` };
+
+  const modelRef = (input.model?.trim() || defaults?.modelRef || "").trim();
+  if (!modelRef) return { ok: false, error: "Agent model 必填" };
+  const modelId = modelRef.includes(":") ? modelRef.split(":")[0] : modelRef;
+  if (!config.models[modelId]) return { ok: false, error: `Unknown model "${modelId}"` };
+
+  const role = (input.role ?? "worker") as "worker" | "specialist" | "orchestrator";
+  if (!["worker", "specialist", "orchestrator"].includes(role)) return { ok: false, error: "role 仅支持 worker/specialist/orchestrator" };
+
+  const tools = dedupeTools(input.tools?.length ? input.tools : (defaults?.tools ?? []));
+  config.agents[id] = {
+    name,
+    model: modelRef,
+    systemPrompt: input.systemPrompt?.trim() || "You are a helpful assistant.",
+    role,
+    tools,
+  };
+  return { ok: true, id };
+}
+
 export function routeAgent(config: Config, text: string): { agentId: string; cleanText: string } {
   const match = text.match(/^@(\S+)\s*([\s\S]*)$/);
   if (match) {
@@ -150,7 +202,7 @@ function buildSystemPrompt(
   sys += `\n\n[当前时间] ${timeStr}`;
 
   // 所有 Agent 的准确信息
-  const allAgents = Object.entries(config.agents);
+  const allAgents = listAgents(config).map(a => [a.id, a] as const);
   sys += `\n\n[系统中共有 ${allAgents.length} 个智能体]`;
   for (const [id, a] of allAgents) {
     sys += `\n  - ${id}: ${a.name} (${a.role})`;
@@ -291,8 +343,8 @@ function deterministicReply(userMessage: string, config: Config): string | null 
     return `${callUser}，我是${myName}。我是你定义出来的${relation}，会一直陪着你，记住你的变化，和你一起把生活和目标都打磨得更好。`;
   }
 
-  if (/(有几个|列举|看看).*(智能体|agent)|(智能体|agent).*(情况|列表|数量)/i.test(q) || normalized.includes("agent情况")) {
-    const allAgents = Object.entries(config.agents).map(([id, a]) => `- ${id}: ${a.name}（${a.role}）`);
+  if (/(有几个|列举|看看|全部|当前).*(智能体|agent|分身)|(智能体|agent|分身).*(情况|列表|数量|配置|个数)/i.test(q) || normalized.includes("agent情况")) {
+    const allAgents = listAgents(config).map(a => `- ${a.id}: ${a.name}（${a.role}）`);
     return `现在系统里一共有 ${allAgents.length} 个智能体：\n${allAgents.join("\n")}`;
   }
 
@@ -349,8 +401,10 @@ const CREATE_AGENT_TOOL: ToolDef = {
       properties: {
         id: { type: "string", description: "英文ID，如 seer, writer, analyst" },
         name: { type: "string", description: "显示名称" },
+        model: { type: "string", description: "模型引用，如 main:deepseek-chat（不填则默认与 Agent0 一致）" },
         systemPrompt: { type: "string", description: "人设和能力描述" },
         role: { type: "string", enum: ["worker", "specialist"], description: "角色" },
+        tools: { type: "array", items: { type: "string" }, description: "工具列表，如 [\"web_search\",\"web_fetch\"]" },
       },
       required: ["id", "name", "systemPrompt"],
     },
@@ -445,15 +499,23 @@ export async function runAgent(
           if (!config.agents[targetId]) toolResult = `Agent "${targetId}" 不存在`;
           else toolResult = await runAgent(config, `${sessionKey}:delegate:${targetId}`, targetId, task);
         } else if (tc.function.name === "create_agent") {
-          const newId = String(args.id ?? "").replace(/[^a-zA-Z0-9_-]/g, "");
-          const newName = String(args.name ?? "");
-          const newPrompt = String(args.systemPrompt ?? "You are a helpful assistant.");
-          const newRole = String(args.role ?? "worker");
-          if (!newId || !newName) toolResult = "需要 id 和 name";
-          else if (config.agents[newId]) toolResult = `Agent "${newId}" 已存在`;
+          const created = createAgentDefinition(
+            config,
+            {
+              id: String(args.id ?? ""),
+              name: String(args.name ?? ""),
+              model: String(args.model ?? ""),
+              systemPrompt: String(args.systemPrompt ?? "You are a helpful assistant."),
+              role: String(args.role ?? "worker"),
+              tools: Array.isArray(args.tools) ? (args.tools as string[]) : undefined,
+            },
+            { modelRef: agentCfg.model, tools: ["web_fetch", "web_search"] }
+          );
+          if (!created.ok) toolResult = created.error;
           else {
-            const modelRef = agentCfg.model;
-            config.agents[newId] = { name: newName, model: modelRef, systemPrompt: newPrompt, role: newRole as any, tools: ["web_fetch","web_search"] };
+            const newId = created.id;
+            const newName = config.agents[newId].name;
+            const newRole = config.agents[newId].role;
             bus.subscribe(newId, async (m) => {
               if (m.type === "task" && typeof m.payload === "string") {
                 const r = await runAgent(config, `bus:${m.from}`, newId, m.payload);

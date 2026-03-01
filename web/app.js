@@ -124,6 +124,7 @@ async function loadStatus(){
   try{
     const d=await(await fetch("/api/status")).json();setConn(true);
     const audit=await (await fetch("/api/pm/audit")).json().catch(()=>null);
+    const consistency=await (await fetch("/api/agents/consistency")).json().catch(()=>null);
     loadEvolution();
     const fmt=s=>s<60?`${Math.floor(s)}s`:s<3600?`${Math.floor(s/60)}m ${Math.floor(s%60)}s`:`${Math.floor(s/3600)}h ${Math.floor(s%3600/60)}m`;
     const ag=d.agents||[];
@@ -153,6 +154,14 @@ async function loadStatus(){
         <div class="status-section-title">体验体检</div>
         <div class="status-val">${audit?`得分 ${audit.score}/${audit.total}`:"体检暂不可用"}</div>
         ${audit?.checks?.length?`<div class="status-audit">${audit.checks.map(c=>`<div class="audit-item ${c.ok?"ok":"bad"}"><span>${c.ok?"✅":"⚠️"} ${esc(c.title)}</span><span>${esc(c.detail)}</span></div>`).join("")}</div>`:""}
+      </div>
+      <div class="status-section">
+        <div class="status-section-title">智能体一致性</div>
+        <div class="status-val">${consistency?.ok?"✅ 无冲突":"⚠️ 发现配置冲突"}</div>
+        ${consistency&&!consistency.ok?`<div class="status-audit">
+          ${consistency.invalidIds?.length?`<div class="audit-item bad"><span>⚠️ 非法ID</span><span>${esc(consistency.invalidIds.join(", "))}</span></div>`:""}
+          ${consistency.duplicateNames?.length?consistency.duplicateNames.map(x=>`<div class="audit-item bad"><span>⚠️ 重名</span><span>${esc(x.name)} → ${esc(x.ids.join(","))}</span></div>`).join(""):""}
+        </div>`:""}
       </div>
       <div class="status-section">
         <div class="status-section-title">工具</div>

@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { resolve, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Config } from "./config.js";
-import { listAgents, routeAgent, runAgent, initAgentBus, agentEvents, startHeartbeat, getReminders, getAgentRuntimeStates } from "./agent.js";
+import { listAgents, routeAgent, runAgent, initAgentBus, agentEvents, startHeartbeat, getReminders, getAgentRuntimeStates, createAgentDefinition } from "./agent.js";
 import { initMemory, getMessageCount, searchMemory, getRecentMessages, getHistoryForSession, getMergedHistory, getUserFacts, getUserFactCount, getMessagesSince } from "./memory.js";
 import { bus } from "./bus.js";
 import { listTools } from "./tools.js";
@@ -198,26 +198,25 @@ export function startServer(config: Config, port: number, configPath?: string) {
         const body = JSON.parse(await collectBody(req));
         const { id, name, model, systemPrompt, role, tools } = body;
         if (!id || !name || !model) return json(res, { error: "id, name, model required" }, 400);
-        if (!/^[a-zA-Z0-9_-]+$/.test(id)) return json(res, { error: "Invalid id (use alphanumeric, _, -)" }, 400);
-        if (config.agents[id]) return json(res, { error: `Agent "${id}" already exists` }, 400);
-
-        const modelId = model.includes(":") ? model.split(":")[0] : model;
-        if (!config.models[modelId]) return json(res, { error: `Unknown model "${modelId}". Available: ${Object.keys(config.models).join(", ")}` }, 400);
-
-        config.agents[id] = {
-          name, model,
-          systemPrompt: systemPrompt || "You are a helpful assistant.",
-          role: role || "worker",
-          tools: tools || [],
-        };
-        bus.subscribe(id, async (m) => {
+        const created = createAgentDefinition(config, {
+          id: String(id),
+          name: String(name),
+          model: String(model),
+          systemPrompt: String(systemPrompt || "You are a helpful assistant."),
+          role: String(role || "worker"),
+          tools: Array.isArray(tools) ? tools.map((x: any) => String(x)) : [],
+        });
+        if (!created.ok) return json(res, { error: created.error }, 400);
+        const normalizedId = created.id;
+        bus.subscribe(normalizedId, async (m) => {
           if (m.type === "task" && typeof m.payload === "string") {
-            const r = await runAgent(config, `bus:${m.from}`, id, m.payload);
-            bus.send({ from: id, to: m.from, type: "result", payload: r });
+            const r = await runAgent(config, `bus:${m.from}`, normalizedId, m.payload);
+            bus.send({ from: normalizedId, to: m.from, type: "result", payload: r });
           }
         });
-        logActivity("system", id, `🧩 Agent 创建: ${name} (${role ?? "worker"})`);
-        console.log(`[server] Agent created: ${id} → ${name} [${role}] model=${model}`);
+        const createdAgent = config.agents[normalizedId];
+        logActivity("system", normalizedId, `🧩 Agent 创建: ${createdAgent.name} (${createdAgent.role})`);
+        console.log(`[server] Agent created: ${normalizedId} → ${createdAgent.name} [${createdAgent.role}] model=${createdAgent.model}`);
 
         if (configPath && existsSync(configPath)) {
           try {
@@ -225,16 +224,42 @@ export function startServer(config: Config, port: number, configPath?: string) {
             const raw = readFileSync(configPath, "utf-8");
             const parsed = parseYaml(raw) || {};
             if (!parsed.agents) parsed.agents = {};
-            parsed.agents[id] = { name, model, systemPrompt: systemPrompt || "You are a helpful assistant.", role: role || "worker", tools: tools || [] };
+            parsed.agents[normalizedId] = {
+              name: createdAgent.name,
+              model: createdAgent.model,
+              systemPrompt: createdAgent.systemPrompt,
+              role: createdAgent.role,
+              tools: createdAgent.tools || [],
+            };
             writeFileSync(configPath, stringifyYaml(parsed, { lineWidth: 0 }), "utf-8");
           } catch (e: any) { console.warn("[server] Failed to persist agent to config:", e.message); }
         }
-        return json(res, { ok: true, agent: { id, ...config.agents[id] } });
+        return json(res, { ok: true, agent: { id: normalizedId, ...createdAgent } });
       } catch (e: any) { return json(res, { error: e.message }, 500); }
     }
 
     if (url === "/api/agents" && method === "GET") {
       return json(res, { agents: listAgents(config) });
+    }
+    if (url === "/api/agents/consistency" && method === "GET") {
+      const list = listAgents(config);
+      const names = new Map<string, string[]>();
+      for (const a of list) {
+        const key = a.name.trim().toLowerCase();
+        const arr = names.get(key) ?? [];
+        arr.push(a.id);
+        names.set(key, arr);
+      }
+      const duplicateNames = [...names.entries()]
+        .filter(([, ids]) => ids.length > 1)
+        .map(([name, ids]) => ({ name, ids }));
+      const invalid = list.filter(a => !/^[a-z0-9_-]+$/.test(a.id));
+      return json(res, {
+        ok: duplicateNames.length === 0 && invalid.length === 0,
+        total: list.length,
+        duplicateNames,
+        invalidIds: invalid.map(a => a.id),
+      });
     }
     if (url === "/api/agents/state" && method === "GET") {
       const runtimeById = new Map(getAgentRuntimeStates().map(s => [s.id, s]));
