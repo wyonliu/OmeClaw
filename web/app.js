@@ -83,6 +83,8 @@ function toggleTTS(){
 function switchView(name){
   $$(".nav-btn").forEach(x=>x.classList.remove("active"));
   $$(`.nav-btn[data-view="${name}"]`).forEach(x=>x.classList.add("active"));
+  $$(".mob-tab").forEach(x=>x.classList.remove("active"));
+  $$(`.mob-tab[data-view="${name}"]`).forEach(x=>x.classList.add("active"));
   $$(".view").forEach(v=>v.classList.remove("active"));
   const view=$(`#view-${name}`);if(view)view.classList.add("active");
   localStorage.setItem("omeclaw_view",name);
@@ -93,6 +95,7 @@ function switchView(name){
   if(name==="memory")loadMemory();
 }
 $$(".nav-btn").forEach(b=>{b.addEventListener("click",()=>switchView(b.dataset.view))});
+$$(".mob-tab").forEach(b=>{b.addEventListener("click",()=>switchView(b.dataset.view))});
 
 // ─── AGENTS ───
 async function loadAgents(){
