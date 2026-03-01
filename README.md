@@ -1,6 +1,6 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/OmeClaw-v0.5.0-8b5cf6?style=for-the-badge" alt="Version">
-  <img src="https://img.shields.io/badge/TypeScript-~1500_lines-3178c6?style=for-the-badge" alt="Size">
+  <img src="https://img.shields.io/badge/OmeClaw-v0.6.0-8b5cf6?style=for-the-badge" alt="Version">
+  <img src="https://img.shields.io/badge/TypeScript-~2000_lines-3178c6?style=for-the-badge" alt="Size">
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License">
 </p>
 
@@ -11,12 +11,27 @@
 </p>
 
 <p align="center">
-  越聊越懂你 · 11层人本记忆 · 羁绊养成 · 多端同步 · 开源可控
+  语音交互 · 主动触达 · 11层人本记忆 · 雷达图可视化 · MBTI测试 · 数据导入 · 养成系统 · 多端同步 · 开源可控
 </p>
 
 ---
 
-## ✨ 功能亮点
+## ✨ v0.6.0 新增
+
+| 特性 | 说明 |
+|---|---|
+| 🎤 **语音交互** | Web Speech API 语音输入 + 浏览器 TTS 语音播报，像跟真人聊天 |
+| 💌 **主动触达** | 早安/午后/晚安自动问候，不只是被动回复——它会主动想你 |
+| 📊 **记忆雷达图** | SVG 11维可视化，一眼看到哪些维度还需补充 |
+| 🧪 **MBTI快测** | 4题快速人格测试，结果直接写入记忆核 |
+| 📥 **数据导入** | 粘贴聊天记录/日记/备忘录，批量提取用户画像 |
+| 📤 **分享名片** | 一键生成分身名片，复制分享给朋友 |
+| 💡 **每日话题** | 每天不同的聊天话题，驱动主动交流 |
+| 😊 **情绪指示器** | 侧栏显示基于记忆的当前情绪状态 |
+
+---
+
+## 🎯 核心功能
 
 | | OmeClaw |
 |---|---|
@@ -30,20 +45,14 @@
 | **自进化心跳** | Agent 定期自我反思，从记忆中提炼洞察，持续迭代人格理解 |
 | **PWA 移动端** | 支持添加到主屏幕，移动端体验接近原生 App |
 | **60秒初体验** | 引导式人格测试，30秒建立初始画像 |
-| **轻量开源** | ~1500行 TypeScript，MIT协议，零Docker |
 
 ---
 
 ## 🚀 快速开始
 
 ```bash
-# 安装
 npm install -g omeclaw
-
-# 创建项目
 omeclaw create my-agents
-
-# 启动
 cd my-agents
 omeclaw start
 # 仪表盘: http://localhost:8080
@@ -52,8 +61,6 @@ omeclaw start
 ---
 
 ## 🧠 记忆系统
-
-OmeClaw 的核心是**人本模型**——不是关键词匹配，而是对人的深层理解。
 
 ### 11层维度
 
@@ -77,14 +84,9 @@ OmeClaw 的核心是**人本模型**——不是关键词匹配，而是对人�
 - **L1 模式**：高频出现的主题自动归纳为行为模式
 - **L2 核心认知**：稳定的人格特征沉淀为长期理解
 
-### 隐性提取
+### 记忆雷达图
 
-不只是记住你说的，更记住你"没说的"：
-- "加班到12点" → 推断作息习惯
-- "唉" → 推断近期情绪
-- 深夜发消息 → 推断夜猫子倾向
-- 发长消息 → 推断详细表达偏好
-- 多次提到某人 → 推断重要关系
+SVG 渲染的 11 维可视化，每个轴代表一个记忆维度，填充度反映该维度的记忆密度。一目了然地看到哪些方面还需要补充。
 
 ---
 
@@ -100,7 +102,45 @@ OmeClaw 的核心是**人本模型**——不是关键词匹配，而是对人�
 
 **成就系统**：初次记忆 🌱 / 初识 🪼 / 渐熟 💙 / 知己 💎 / 灵魂伴侣 🌊 / 三日连击 🔥 / 周连击 ⚡ / 月连击 👑
 
-**记忆写入**时会有游戏化特效通知，让你感受到"它真的记住了"。
+---
+
+## 🎤 语音交互
+
+- **语音输入**：点击麦克风按钮，浏览器 Web Speech API 识别中文语音
+- **语音播报**：开启后 Agent 回复自动朗读（浏览器 TTS）
+- 体验接近跟真人语音聊天
+
+---
+
+## 💌 主动触达
+
+Agent 不只被动回复——它会主动关心你：
+
+- ☀️ 早上 8 点：早安问候
+- 💧 下午 2 点：午后关心
+- 🌙 晚上 10 点：晚安提醒
+
+消息会出现在聊天记录中，跨端同步。
+
+---
+
+## 📡 API
+
+| 接口 | 方法 | 说明 |
+|---|---|---|
+| `/api/status` | GET | 系统状态 |
+| `/api/agents` | GET/POST | 列出/创建 Agent |
+| `/api/agents/state` | GET | Agent 实时运行状态 |
+| `/api/chat` | POST | 对话 |
+| `/api/chat/poll?since=` | GET | 增量轮询新消息 |
+| `/api/bond` | GET | 羁绊状态 |
+| `/api/memory/model` | GET | 11层记忆结构 |
+| `/api/memory/all` | GET | 全部记忆 |
+| `/api/import` | POST | 批量文本导入 |
+| `/api/share-card` | GET | 分享名片数据 |
+| `/api/daily-prompt` | GET | 每日话题 |
+| `/api/evolution` | GET | 自进化记录 |
+| `/api/pm/audit` | GET | 体验体检 |
 
 ---
 
@@ -115,7 +155,7 @@ src/
 ├── bus.ts           # Agent 间消息总线
 ├── tools.ts         # web_search/web_fetch/文件/Shell
 ├── scheduler.ts     # Cron 定时任务
-├── server.ts        # HTTP API + Web UI
+├── server.ts        # HTTP API + Web UI + 主动触达
 ├── cli.ts           # create / start / chat
 └── gateway/
     ├── base.ts      # Gateway 适配器
@@ -126,55 +166,15 @@ src/
 
 ---
 
-## 🔧 核心能力
-
-### 飞书集成
-
-- **WebSocket 长连接**：无需 ngrok，本地即可接收消息
-- **限流保护**：30次/分钟/用户，事件去重
-- 所有消息跨端同步到统一记忆
-
-### 内置工具
-
-| 工具 | 说明 |
-|---|---|
-| `web_search` | Bing 搜索 |
-| `web_fetch` | 抓取 URL 内容 |
-| `read_file` / `write_file` | 文件读写 |
-| `shell` | 执行命令 |
-| `remember_about_user` | 持久记忆（自动 + 手动） |
-| `set_reminder` | 定时提醒 |
-| `create_agent` | 对话中创建子 Agent |
-| `delegate_to_agent` | 委派任务给子 Agent |
-
----
-
-## 📡 API
-
-| 接口 | 方法 | 说明 |
-|---|---|---|
-| `/api/status` | GET | 系统状态 |
-| `/api/agents` | GET/POST | 列出/创建 Agent |
-| `/api/agents/state` | GET | Agent 实时运行状态 |
-| `/api/agents/consistency` | GET | 配置一致性检查 |
-| `/api/chat` | POST | 对话 |
-| `/api/chat/poll?since=` | GET | 增量轮询新消息 |
-| `/api/chat/history?merged=1` | GET | 聊天历史 |
-| `/api/bond` | GET | 羁绊状态 |
-| `/api/memory/model` | GET | 11层记忆结构 |
-| `/api/memory/all` | GET | 全部记忆 |
-| `/api/evolution` | GET | 自进化记录 |
-| `/api/reminders` | GET | 定时提醒列表 |
-
----
-
 ## 📋 最佳实践
 
-1. **开箱即用**：首次打开有引导式人格测试，30秒建立初始画像
+1. **60秒上手**：首次打开有引导式人格测试，3个问题建立初始画像
 2. **自然聊天**：不需要刻意"录入信息"，正常聊天中自动提取一切
-3. **跨端无缝**：飞书/Web/CLI 随时切换，记忆和身份始终同步
-4. **对话创建 Agent**：说"创建一个Agent叫Seer，最伟大的作家"即可
-5. **定时提醒**：说"下午3点提醒我开会"就行
+3. **语音优先**：点击麦克风，像跟朋友语音一样交流
+4. **数据导入**：在记忆核页面点"导入"，粘贴你的聊天记录/日记，批量建立画像
+5. **MBTI测试**：点"MBTI"按钮，4题快测，结果直接写入记忆
+6. **分享分身**：点"分享"，生成名片分享给朋友
+7. **跨端无缝**：飞书/Web/CLI 随时切换，记忆和身份始终同步
 
 ---
 

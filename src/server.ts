@@ -4,7 +4,7 @@ import { resolve, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Config } from "./config.js";
 import { listAgents, routeAgent, runAgent, initAgentBus, agentEvents, startHeartbeat, getReminders, getAgentRuntimeStates, createAgentDefinition } from "./agent.js";
-import { initMemory, getMessageCount, searchMemory, getRecentMessages, getHistoryForSession, getMergedHistory, getUserFacts, getUserFactCount, getMessagesSince } from "./memory.js";
+import { initMemory, getMessageCount, searchMemory, getRecentMessages, getHistoryForSession, getMergedHistory, getUserFacts, getUserFactCount, getMessagesSince, saveUserFact, saveMessage } from "./memory.js";
 import { bus } from "./bus.js";
 import { listTools } from "./tools.js";
 import { createLarkAdapter } from "./gateway/lark.js";
@@ -103,6 +103,36 @@ export function startServer(config: Config, port: number, configPath?: string) {
   startScheduler(config);
   startHeartbeat(config, 3600_000);
 
+  // ─── 主动触达系统 ───
+  let lastProactiveHour = -1;
+  setInterval(async () => {
+    const h = new Date().getHours();
+    if (h === lastProactiveHour) return;
+    const facts = getUserFacts();
+    if (facts.length < 2) return;
+    const callUser = facts.find(f => f.key === "称呼用户为")?.value ?? "";
+    const orchId = Object.entries(config.agents).find(([_, a]) => a.role === "orchestrator")?.[0];
+    if (!orchId) return;
+
+    let proactiveMsg = "";
+    if (h === 8) { proactiveMsg = callUser ? `${callUser}，早安~ 新的一天，有什么计划吗？` : "早安~ 新的一天开始了 ☀️"; }
+    else if (h === 22) { proactiveMsg = callUser ? `${callUser}，今天辛苦了~ 早点休息哦 🌙` : "夜深了，早点休息 🌙"; }
+    else if (h === 14) {
+      const prompts = ["下午了，喝杯水吧~ 💧","下午好，工作顺利吗？","困了吧？站起来活动活动~"];
+      proactiveMsg = prompts[Math.floor(Math.random() * prompts.length)];
+    }
+
+    if (proactiveMsg) {
+      lastProactiveHour = h;
+      saveMessage(OWNER_SESSION, orchId, "assistant", proactiveMsg);
+      logActivity("agent_out", orchId, `💌 主动触达: ${proactiveMsg}`, "system");
+      logEvolution("proactive", `主动关心 · ${proactiveMsg.slice(0, 30)}`, "💌");
+      for (const gw of allGateways()) {
+        try { await gw.broadcast?.(proactiveMsg); } catch {}
+      }
+    }
+  }, 300_000);
+
   // 提醒到时回调：发给用户
   agentEvents.on("reminder", async (d: { id: string; message: string; agentId: string }) => {
     const text = `⏰ 提醒: ${d.message}`;
@@ -141,7 +171,7 @@ export function startServer(config: Config, port: number, configPath?: string) {
     if (url === "/api/status" && method === "GET") {
       const runtime = getAgentRuntimeStates();
       return json(res, {
-        status: "running", version: "0.5.0", uptime: process.uptime(),
+        status: "running", version: "0.6.0", uptime: process.uptime(),
         agents: listAgents(config).map(a => ({ id: a.id, name: a.name, role: a.role })),
         agentRuntime: runtime,
         gateways: allGateways().map(g => g.name),
@@ -404,6 +434,60 @@ export function startServer(config: Config, port: number, configPath?: string) {
       return json(res, { reminders: getReminders() });
     }
 
+    // 数据导入：批量文本提取用户画像
+    if (url === "/api/import" && method === "POST") {
+      try {
+        const body = JSON.parse(await collectBody(req));
+        const text = String(body.text ?? "").trim();
+        if (!text || text.length < 10) return json(res, { error: "text too short" }, 400);
+        const { extractFactsFromBulkText } = await import("./agent.js");
+        const extracted = extractFactsFromBulkText(text);
+        for (const f of extracted) saveUserFact(OWNER_SESSION, f.key, f.value);
+        logActivity("memory", "import", `📥 批量导入 ${extracted.length} 条记忆`);
+        if (extracted.length) logEvolution("import", `批量导入 ${extracted.length} 条画像数据`, "📥");
+        return json(res, { ok: true, count: extracted.length, facts: extracted });
+      } catch (e: any) { return json(res, { error: e.message }, 500); }
+    }
+
+    // 分享名片数据
+    if (url === "/api/share-card" && method === "GET") {
+      const facts = getUserFacts();
+      const myName = facts.find(f => f.key === "我的名字")?.value ?? "Ome";
+      const callUser = facts.find(f => f.key === "称呼用户为")?.value;
+      const relationship = facts.find(f => f.key === "关系定义")?.value ?? "分身";
+      const mbti = facts.find(f => f.key === "MBTI")?.value;
+      const zodiac = facts.find(f => f.key === "属相")?.value;
+      const constellation = facts.find(f => f.key === "星座")?.value;
+      const catKeys = [
+        ["生日","属相","星座","血型"],["MBTI","九型","大五","核心特质"],
+        ["内向","外向","理性","感性","性格"],["喜欢","讨厌","食物","音乐"],
+        ["擅长","专业","技能","工作"],["口头禅","作息","习惯"],
+        ["家人","伴侣","朋友","宠物"],["纪念日","转折","成就","经历"],
+        ["目标","计划","梦想"],["心情","情绪","压力","近期情绪"],["命理","五行","运势"],
+      ];
+      const filledCategories = catKeys.filter(keys => facts.some(f => keys.some(k => f.key.includes(k)))).length;
+      return json(res, {
+        myName, callUser, relationship, mbti, zodiac, constellation,
+        factCount: facts.length, filledCategories, totalCategories: 11,
+        completeness: Math.round(filledCategories / 11 * 100),
+        topFacts: facts.slice(0, 6).map(f => `${f.key}: ${f.value}`),
+      });
+    }
+
+    // 每日话题
+    if (url === "/api/daily-prompt" && method === "GET") {
+      const prompts = [
+        "今天心情怎么样？","最近在追什么剧/番？","周末有什么计划？",
+        "最近读了什么好书吗？","有没有什么烦心事想聊聊？","如果明天放假，你最想做什么？",
+        "你最近学了什么新技能？","有没有想对过去的自己说的话？","你理想中的一天是什么样的？",
+        "最近有什么让你开心的小事？","你觉得自己最大的优点是什么？","今天吃了什么好吃的？",
+        "有没有一首歌能代表你现在的心情？","你觉得自己活到现在最正确的决定是什么？",
+        "如果能拥有一个超能力，你选什么？","你最珍惜的人是谁？",
+      ];
+      const dayIndex = Math.floor(Date.now() / 86400000) % prompts.length;
+      return json(res, { prompt: prompts[dayIndex], index: dayIndex });
+    }
+
     if (url.startsWith("/api/chat/history") && method === "GET") {
       const params = new URL(fullUrl, "http://localhost").searchParams;
       const sessionId = params.get("sessionId") ?? "";
@@ -457,7 +541,7 @@ export function startServer(config: Config, port: number, configPath?: string) {
   logEvolution("start", "分身系统苏醒", "🪼");
 
   server.listen(port, () => {
-    console.log(`\n  🪼 OmeClaw v0.5.0 — Agent Operating System`);
+    console.log(`\n  🪼 OmeClaw v0.6.0 — Agent Operating System`);
     console.log(`  ──────────────────────────────────────────`);
     console.log(`  📊 Dashboard:   http://localhost:${port}`);
     console.log(`  🔌 API:         http://localhost:${port}/api/status`);

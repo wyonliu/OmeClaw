@@ -22,6 +22,7 @@
           <div class="bond-level" id="bond-level">初见</div>
           <div class="bond-progress" id="bond-progress"></div>
         </div>
+        <span class="bond-mood" id="bond-mood"></span>
       </div>
       <div class="sidebar-section">
         <button class="nav-btn active" data-view="chat">💬 对话</button>
@@ -42,10 +43,14 @@
       <div id="view-chat" class="view active">
         <div class="view-header">
           <h2 id="chat-agent-name">Agent0</h2>
-          <select id="agent-select" class="header-select"></select>
+          <div class="header-actions">
+            <button class="icon-btn" id="tts-btn" onclick="toggleTTS()" title="语音播报">🔇</button>
+            <select id="agent-select" class="header-select"></select>
+          </div>
         </div>
         <div id="messages" class="messages"></div>
         <form id="chat-form" class="chat-input">
+          <button type="button" class="icon-btn mic-btn" id="mic-btn" onclick="toggleVoice()" title="语音输入">🎤</button>
           <input type="text" id="chat-input" placeholder="说点什么…" autocomplete="off">
           <button type="submit" id="send-btn">发送</button>
         </form>
@@ -63,7 +68,7 @@
             <label>Model <input id="new-model" placeholder="e.g. main:deepseek-chat" value="main:deepseek-chat"></label>
             <label>Role <select id="new-role"><option value="worker">Worker</option><option value="specialist">Specialist</option><option value="orchestrator">Orchestrator</option></select></label>
             <label>System Prompt <textarea id="new-prompt" rows="3" placeholder="你是一个..."></textarea></label>
-            <label>Tools <input id="new-tools" placeholder="web_fetch, web_search, shell (逗号分隔)"></label>
+            <label>Tools <input id="new-tools" placeholder="web_fetch, web_search (逗号分隔)"></label>
             <div class="modal-actions"><button class="btn-secondary" id="cancel-create">取消</button><button class="btn-primary" id="confirm-create">创建</button></div>
           </div>
         </div>
@@ -83,6 +88,9 @@
             <div class="search-group"><input type="text" id="mem-q" placeholder="搜索记忆..."><button class="btn-primary" id="mem-search-btn">搜索</button></div>
             <button class="btn-secondary" id="mem-view-all-btn">全部</button>
             <button class="btn-secondary" id="mem-copy-btn">复制</button>
+            <button class="btn-secondary" id="import-btn">📥 导入</button>
+            <button class="btn-secondary" id="share-btn">📤 分享</button>
+            <button class="btn-secondary" id="mbti-test-btn">🧪 MBTI</button>
           </div>
         </div>
         <div id="mem-results" class="memory-view"></div>
@@ -101,19 +109,32 @@
   </div>
   <div id="memory-toast-container"></div>
   
-  <!-- 60秒引导式人格测试 -->
+  <!-- Onboarding -->
   <div id="onboarding-modal" class="modal" style="display:none">
     <div class="modal-content onboarding-content">
-      <div class="onboarding-header">
-        <span class="onboarding-logo">🪼</span>
-        <span class="onboarding-title-text">初次见面，先认识一下？</span>
-      </div>
+      <div class="onboarding-header"><span class="onboarding-logo">🪼</span><span class="onboarding-title-text">初次见面，先认识一下？</span></div>
       <div class="onboarding-progress"><div class="onboarding-progress-fill" id="onboarding-progress"></div></div>
       <div id="onboarding-step"></div>
-      <div class="onboarding-actions">
-        <button class="btn-secondary" id="onboarding-skip">跳过</button>
-        <button class="btn-primary" id="onboarding-next">下一步</button>
-      </div>
+      <div class="onboarding-actions"><button class="btn-secondary" id="onboarding-skip">跳过</button><button class="btn-primary" id="onboarding-next">下一步</button></div>
+    </div>
+  </div>
+
+  <!-- Import Modal -->
+  <div id="import-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <h3>📥 数据导入</h3>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:12px">粘贴聊天记录、日记、备忘录等文本，系统会自动提取你的画像信息。</p>
+      <textarea id="import-text" rows="8" placeholder="粘贴你的文本到这里...&#10;支持聊天记录、日记、个人简介等任何包含个人信息的文本。"></textarea>
+      <div class="modal-actions"><button class="btn-secondary" id="cancel-import">取消</button><button class="btn-primary" id="confirm-import">导入</button></div>
+    </div>
+  </div>
+
+  <!-- MBTI Modal -->
+  <div id="mbti-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <h3>🧪 快速人格测试</h3>
+      <div id="mbti-step"></div>
+      <div class="modal-actions"><button class="btn-secondary" id="cancel-mbti">关闭</button></div>
     </div>
   </div>
 

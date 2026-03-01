@@ -1,7 +1,7 @@
 {
   "name": "omeclaw",
-  "version": "0.5.0",
-  "description": "养一只属于你的数字分身 — 11层人本记忆 · 养成系统 · 多端同步 · 开源可控",
+  "version": "0.6.0",
+  "description": "养一只属于你的数字分身 — 语音交互 · 主动触达 · 11层记忆 · 雷达图 · MBTI · 数据导入 · 养成系统 · 开源可控",
   "type": "module",
   "bin": { "omeclaw": "./dist/cli.js" },
   "scripts": { "dev": "tsx src/cli.ts", "build": "tsc", "start": "node dist/cli.js" },

@@ -648,6 +648,20 @@ export async function runAgent(
   }
 }
 
+export function extractFactsFromBulkText(text: string): Array<{ key: string; value: string }> {
+  const allFacts: Array<{ key: string; value: string }> = [];
+  const seen = new Set<string>();
+  const lines = text.split(/[\n。！？!?.]+/).filter(l => l.trim().length > 2);
+  for (const line of lines) {
+    const facts = extractFallbackFacts(line.trim());
+    for (const f of facts) {
+      const k = `${f.key}:${f.value}`;
+      if (!seen.has(k)) { seen.add(k); allFacts.push(f); }
+    }
+  }
+  return allFacts.slice(0, 50);
+}
+
 export async function askAgent(config: Config, agentId: string, message: string): Promise<string> {
   return runAgent(config, `__cron_${Date.now()}`, agentId, message);
 }
