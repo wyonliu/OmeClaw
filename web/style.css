@@ -364,16 +364,16 @@ body{
 }
 
 .memory-hero{
-  padding:24px 16px;
+  padding:16px;
   text-align:center;
   background:linear-gradient(180deg,var(--surface),var(--bg));
 }
 
 #memory-planet{
   display:block;
-  margin:0 auto 20px;
-  max-width:100%;
-  height:auto;
+  margin:0 auto 12px;
+  max-width:200px;
+  height:200px;
 }
 
 .memory-stats{
@@ -920,4 +920,136 @@ body{
     border-left:1px solid var(--border);
     border-right:1px solid var(--border);
   }
+}
+
+/* ========== Agent列表（子页面） ========== */
+.agents-list{
+  padding:16px;
+  overflow-y:auto;
+  flex:1;
+}
+
+.agent-card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:16px;
+  padding:16px;
+  margin-bottom:12px;
+}
+
+.agent-card-header{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom:12px;
+}
+
+.agent-role-badge{
+  font-size:10px;
+  padding:4px 8px;
+  border-radius:8px;
+  font-weight:600;
+  text-transform:uppercase;
+}
+
+.agent-role-badge.orchestrator{
+  background:rgba(124,108,240,.2);
+  color:var(--accent);
+}
+
+.agent-role-badge.worker{
+  background:rgba(0,212,123,.2);
+  color:var(--green);
+}
+
+.agent-role-badge.specialist{
+  background:rgba(255,160,64,.2);
+  color:var(--orange);
+}
+
+.agent-card h3{
+  font-size:16px;
+  font-weight:600;
+  margin:0;
+}
+
+.agent-card p{
+  font-size:13px;
+  color:var(--text2);
+  line-height:1.6;
+  margin:0 0 12px;
+}
+
+.agent-card-footer{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+
+.agent-model{
+  font-size:11px;
+  color:var(--text2);
+  background:var(--surface2);
+  padding:4px 8px;
+  border-radius:6px;
+}
+
+/* ========== 活动日志（子页面） ========== */
+.activity-timeline{
+  padding:16px;
+  overflow-y:auto;
+  flex:1;
+}
+
+.activity-item{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:12px;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:12px;
+  margin-bottom:8px;
+  border-left:3px solid var(--border);
+}
+
+.activity-item.user{
+  border-left-color:var(--blue);
+}
+
+.activity-item.agent{
+  border-left-color:var(--green);
+}
+
+.activity-item.memory{
+  border-left-color:var(--accent);
+}
+
+.activity-item.tool{
+  border-left-color:var(--orange);
+}
+
+.activity-item.system{
+  border-left-color:var(--text2);
+  opacity:.7;
+}
+
+.activity-icon{
+  font-size:18px;
+  flex-shrink:0;
+}
+
+.activity-time{
+  font-size:11px;
+  color:var(--text2);
+  font-family:"SF Mono",Menlo,monospace;
+  flex-shrink:0;
+  min-width:50px;
+}
+
+.activity-detail{
+  font-size:13px;
+  color:var(--text);
+  flex:1;
+  word-break:break-word;
 }

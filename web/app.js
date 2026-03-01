@@ -214,19 +214,24 @@ async function loadMemory() {
 function renderMemoryPlanet(data) {
   const canvas = $("#memory-planet");
   if (!canvas) return;
+  
+  // 设置实际尺寸
+  canvas.width = 200;
+  canvas.height = 200;
+  
   const ctx = canvas.getContext("2d");
   const w = canvas.width;
   const h = canvas.height;
   const cx = w / 2;
   const cy = h / 2;
-  const r = 120;
+  const r = 70;
   
   ctx.clearRect(0, 0, w, h);
   
   // 背景星空
-  for (let i = 0; i < 50; i++) {
-    ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.5})`;
-    ctx.fillRect(Math.random() * w, Math.random() * h, 2, 2);
+  for (let i = 0; i < 30; i++) {
+    ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.4})`;
+    ctx.fillRect(Math.random() * w, Math.random() * h, 1, 1);
   }
   
   // 主星球
@@ -243,12 +248,12 @@ function renderMemoryPlanet(data) {
   const angleStep = (Math.PI * 2) / 11;
   categories.forEach((cat, i) => {
     const angle = i * angleStep - Math.PI / 2;
-    const x = cx + Math.cos(angle) * (r + 30);
-    const y = cy + Math.sin(angle) * (r + 30);
+    const x = cx + Math.cos(angle) * (r + 20);
+    const y = cy + Math.sin(angle) * (r + 20);
     
     ctx.fillStyle = cat.filled ? "#00d47b" : "#2a2a3a";
     ctx.beginPath();
-    ctx.arc(x, y, 8, 0, Math.PI * 2);
+    ctx.arc(x, y, 6, 0, Math.PI * 2);
     ctx.fill();
     
     if (cat.filled) {
@@ -373,12 +378,13 @@ async function loadBond() {
 function checkOnboarding() {
   const done = localStorage.getItem("omeclaw_onboarding");
   if (!done) {
-    showOnboarding();
+    setTimeout(showOnboarding, 500);
   }
 }
 
 function showOnboarding() {
   const modal = $("#onboarding-modal");
+  if (!modal) return;
   modal.style.display = "flex";
   
   const steps = [
@@ -408,65 +414,93 @@ function showOnboarding() {
   
   function renderStep() {
     const step = steps[currentStep];
-    $("#onboarding-title").textContent = step.title;
-    $("#onboarding-desc").textContent = step.desc;
-    $("#onboarding-progress").style.width = `${((currentStep + 1) / steps.length) * 100}%`;
+    const titleEl = $("#onboarding-title");
+    const descEl = $("#onboarding-desc");
+    const progressEl = $("#onboarding-progress");
+    const contentEl = $("#onboarding-content");
+    const nextBtn = $("#onboarding-next");
     
-    const content = $("#onboarding-content");
+    if (!titleEl || !descEl || !progressEl || !contentEl || !nextBtn) return;
+    
+    titleEl.textContent = step.title;
+    descEl.textContent = step.desc;
+    progressEl.style.width = `${((currentStep + 1) / steps.length) * 100}%`;
+    
     if (step.input) {
-      content.innerHTML = `<input type="text" id="onboarding-input" placeholder="${step.placeholder}" style="width:100%;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:12px;color:var(--text);font-size:15px;outline:none;margin-top:12px">`;
-      setTimeout(() => $("#onboarding-input")?.focus(), 100);
+      contentEl.innerHTML = `<input type="text" id="onboarding-input" placeholder="${step.placeholder}" style="width:100%;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:12px;color:var(--text);font-size:15px;outline:none;margin-top:12px">`;
+      setTimeout(() => {
+        const input = $("#onboarding-input");
+        if (input) {
+          input.focus();
+          input.addEventListener("keypress", (e) => {
+            if (e.key === "Enter") nextBtn.click();
+          });
+        }
+      }, 100);
     } else {
-      content.innerHTML = "";
+      contentEl.innerHTML = "";
     }
     
-    $("#onboarding-next").textContent = step.final ? "开始" : "下一步";
+    nextBtn.textContent = step.final ? "开始" : "下一步";
   }
   
-  $("#onboarding-next").onclick = async () => {
-    const step = steps[currentStep];
-    if (step.input) {
-      const input = $("#onboarding-input");
-      const value = input?.value.trim();
-      if (!value) {
-        showToast("请输入内容", "error");
-        return;
-      }
-      answers[step.key] = value;
-    }
-    
-    if (step.final) {
-      // 提交答案
-      if (answers.name) {
-        await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: `以后叫你${answers.name}`, sessionId: OWNER_SESSION })
-        });
-      }
-      if (answers.callUser) {
-        await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: `叫我${answers.callUser}`, sessionId: OWNER_SESSION })
-        });
+  const nextBtn = $("#onboarding-next");
+  const skipBtn = $("#onboarding-skip");
+  
+  if (nextBtn) {
+    nextBtn.onclick = async () => {
+      const step = steps[currentStep];
+      if (step.input) {
+        const input = $("#onboarding-input");
+        const value = input?.value.trim();
+        if (!value) {
+          showToast("请输入内容", "info");
+          return;
+        }
+        answers[step.key] = value;
       }
       
+      if (step.final) {
+        // 提交答案
+        try {
+          if (answers.name) {
+            await fetch("/api/chat", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ message: `以后叫你${answers.name}`, sessionId: OWNER_SESSION })
+            });
+          }
+          if (answers.callUser) {
+            await fetch("/api/chat", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ message: `叫我${answers.callUser}`, sessionId: OWNER_SESSION })
+            });
+          }
+        } catch (e) {
+          console.error("Onboarding submit error:", e);
+        }
+        
+        localStorage.setItem("omeclaw_onboarding", "1");
+        modal.style.display = "none";
+        setTimeout(() => {
+          loadChatHistory();
+          loadBond();
+        }, 300);
+        return;
+      }
+      
+      currentStep++;
+      renderStep();
+    };
+  }
+  
+  if (skipBtn) {
+    skipBtn.onclick = () => {
       localStorage.setItem("omeclaw_onboarding", "1");
       modal.style.display = "none";
-      loadChatHistory();
-      loadBond();
-      return;
-    }
-    
-    currentStep++;
-    renderStep();
-  };
-  
-  $("#onboarding-skip").onclick = () => {
-    localStorage.setItem("omeclaw_onboarding", "1");
-    modal.style.display = "none";
-  };
+    };
+  }
   
   renderStep();
 }
@@ -482,11 +516,142 @@ async function init() {
     console.error("init:", e);
   }
   
+  // 绑定语音按钮
+  const voiceBtn = $("#voice-btn");
+  if (voiceBtn) {
+    voiceBtn.addEventListener("click", toggleVoice);
+  }
+  
+  // 绑定TTS按钮
+  const ttsBtn = $("#tts-toggle");
+  if (ttsBtn) {
+    ttsBtn.addEventListener("click", toggleTTS);
+  }
+  
+  // 绑定我的页面按钮
+  const mbtiBtn = $("#mbti-test-btn");
+  if (mbtiBtn) {
+    mbtiBtn.addEventListener("click", () => {
+      showToast("MBTI测试开发中...", "info");
+    });
+  }
+  
+  const agentsManageBtn = $("#agents-manage-btn");
+  if (agentsManageBtn) {
+    agentsManageBtn.addEventListener("click", () => {
+      $("#view-agents").classList.add("active");
+      loadAgentsList();
+    });
+  }
+  
+  const activityLogBtn = $("#activity-log-btn");
+  if (activityLogBtn) {
+    activityLogBtn.addEventListener("click", () => {
+      $("#view-activity").classList.add("active");
+      loadActivityLog();
+    });
+  }
+  
+  const themeBtn = $("#theme-btn");
+  if (themeBtn) {
+    themeBtn.addEventListener("click", () => {
+      showToast("主题切换开发中...", "info");
+    });
+  }
+  
+  const aboutBtn = $("#about-btn");
+  if (aboutBtn) {
+    aboutBtn.addEventListener("click", () => {
+      showToast("OmeClaw v0.6.0-mobile\n你的24小时AI分身", "info");
+    });
+  }
+  
+  // 绑定导入/分享按钮
+  const importBtn = $("#import-btn");
+  if (importBtn) {
+    importBtn.addEventListener("click", () => {
+      showToast("数据导入开发中...", "info");
+    });
+  }
+  
+  const shareBtn = $("#share-btn");
+  if (shareBtn) {
+    shareBtn.addEventListener("click", () => {
+      showToast("分享功能开发中...", "info");
+    });
+  }
+  
+  // 恢复上次的视图
   const savedView = localStorage.getItem("omeclaw_view") || "chat";
   switchView(savedView);
   loadBond();
   
-  setTimeout(checkOnboarding, 500);
+  // 延迟检查引导
+  setTimeout(checkOnboarding, 800);
 }
+
+// 加载Agent列表（子页面）
+async function loadAgentsList() {
+  try {
+    const resp = await fetch("/api/agents");
+    const data = await resp.json();
+    const container = $("#agents-list");
+    if (!container) return;
+    
+    const agentsList = data.agents || [];
+    container.innerHTML = agentsList.map(a => `
+      <div class="agent-card">
+        <div class="agent-card-header">
+          <span class="agent-role-badge ${a.role}">${a.role}</span>
+          <h3>${esc(a.name)}</h3>
+        </div>
+        <p>${esc(a.systemPrompt.slice(0, 100))}...</p>
+        <div class="agent-card-footer">
+          <span class="agent-model">${esc(a.model)}</span>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    console.error("loadAgentsList:", e);
+  }
+}
+
+// 加载活动日志（子页面）
+async function loadActivityLog() {
+  try {
+    const resp = await fetch("/api/activity");
+    const data = await resp.json();
+    const container = $("#activity-timeline");
+    if (!container) return;
+    
+    const items = data.timeline || [];
+    container.innerHTML = items.slice(-50).reverse().map(item => {
+      const time = new Date(item.time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+      let icon = "📝";
+      let className = "activity-item";
+      
+      if (item.type === "user_in") { icon = "💬"; className += " user"; }
+      else if (item.type === "agent_out") { icon = "🤖"; className += " agent"; }
+      else if (item.type === "memory") { icon = "🧠"; className += " memory"; }
+      else if (item.type === "tool") { icon = "🔧"; className += " tool"; }
+      else if (item.type === "system") { icon = "⚙️"; className += " system"; }
+      
+      return `
+        <div class="${className}">
+          <span class="activity-icon">${icon}</span>
+          <span class="activity-time">${time}</span>
+          <span class="activity-detail">${esc(item.detail.slice(0, 100))}</span>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    console.error("loadActivityLog:", e);
+  }
+}
+
+// 全局goBack函数
+window.goBack = function() {
+  $$(".subview.active").forEach(v => v.classList.remove("active"));
+};
 
 init();
