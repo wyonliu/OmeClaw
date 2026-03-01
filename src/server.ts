@@ -147,8 +147,48 @@ export function startServer(config: Config, port: number, configPath?: string) {
         gateways: allGateways().map(g => g.name),
         tools: listTools().map(t => t.name),
         memory: { messages: getMessageCount() },
+        reminders: { count: getReminders().length, active: getReminders().slice(0, 20) },
         busAgents: bus.activeAgents(),
         scheduler: config.scheduler?.enabled ? { jobs: config.scheduler.jobs.length } : null,
+      });
+    }
+
+    if (url === "/api/pm/audit" && method === "GET") {
+      const allAgents = listAgents(config);
+      const runtime = getAgentRuntimeStates();
+      const factCount = getUserFactCount();
+      const facts = getUserFacts();
+      const checks = [
+        {
+          id: "agent_count_consistency",
+          title: "Agent 数量一致性",
+          ok: allAgents.length >= 1 && runtime.length <= allAgents.length,
+          detail: `配置 ${allAgents.length} 个 / 运行态 ${runtime.length} 个`,
+        },
+        {
+          id: "cross_end_memory",
+          title: "跨端记忆最小可用",
+          ok: factCount > 0,
+          detail: factCount > 0 ? `已存 ${factCount} 条用户事实` : "暂无用户事实，请先完成首次引导",
+        },
+        {
+          id: "gateway_online",
+          title: "网关在线",
+          ok: allGateways().length > 0,
+          detail: allGateways().length ? `已启用：${allGateways().map(g => g.name).join(", ")}` : "仅 Web 入口",
+        },
+        {
+          id: "memory_density",
+          title: "记忆密度",
+          ok: facts.length >= 8,
+          detail: facts.length >= 8 ? "记忆密度达标" : `当前 ${facts.length} 条，建议继续补充用户画像`,
+        },
+      ];
+      return json(res, {
+        generatedAt: Date.now(),
+        score: checks.filter(c => c.ok).length,
+        total: checks.length,
+        checks,
       });
     }
 

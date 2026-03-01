@@ -114,6 +114,11 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .status-tools{display:flex;flex-wrap:wrap;gap:6px}
 .tool-tag{font-size:10px;padding:3px 8px;background:var(--surface2);border-radius:4px;color:var(--text2)}
 .status-val{font-size:13px;color:var(--text)}
+.status-audit{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.audit-item{display:flex;justify-content:space-between;gap:8px;font-size:11px;padding:6px 8px;border-radius:6px;background:var(--surface2)}
+.audit-item.ok{border-left:3px solid var(--green)}
+.audit-item.bad{border-left:3px solid var(--orange)}
+.audit-item span:last-child{color:var(--text2)}
 
 /* 自进化 */
 .evolution-section{margin:20px 24px;padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;max-width:520px}

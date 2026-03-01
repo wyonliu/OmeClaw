@@ -265,6 +265,47 @@ function extractFallbackFacts(text: string): Array<{ key: string; value: string 
   return facts.slice(0, 5);
 }
 
+const MEMORY_LAYERS: Array<{ name: string; keys: string[] }> = [
+  { name: "基因层", keys: ["生日","属相","星座","血型","八字","出生地","籍贯","年龄"] },
+  { name: "人格层", keys: ["姓名","名字","MBTI","九型","大五","核心特质","自我认知","人生信条","价值观"] },
+  { name: "性格层", keys: ["内向","外向","理性","感性","决策","沟通","沟通风格","情绪基调","性格"] },
+  { name: "爱好层", keys: ["喜欢","讨厌","食物","音乐","电影","书","运动","旅行","收藏","笑点","偏好"] },
+  { name: "技能层", keys: ["擅长","专业","技能","语言","特长","工作"] },
+  { name: "表现层", keys: ["口头禅","习惯","作息","近期状态","休息偏好","近期关注","表达风格"] },
+  { name: "关系层", keys: ["家人","父母","伴侣","朋友","同事","重要的人","宠物"] },
+  { name: "经历层", keys: ["纪念日","转折","难忘","成就","经历","遗憾"] },
+  { name: "目标层", keys: ["目标","计划","理想","焦虑","在忙","项目","梦想"] },
+  { name: "情感层", keys: ["心情","情绪","压力","开心","烦","累","状态","近期情绪","情绪变化"] },
+  { name: "玄学层", keys: ["命理","五行","运势","玄学"] },
+];
+
+function deterministicReply(userMessage: string, config: Config): string | null {
+  const q = userMessage.trim();
+  const normalized = q.toLowerCase();
+  const facts = getUserFacts();
+  const myName = facts.find(f => f.key === "我的名字")?.value ?? "Ome";
+  const callUser = facts.find(f => f.key === "称呼用户为")?.value ?? "你";
+  const relation = facts.find(f => f.key === "关系定义")?.value ?? "分身";
+
+  if (/你是谁|你的宗旨|你的目标|你的使命/.test(q)) {
+    return `${callUser}，我是${myName}。我是你定义出来的${relation}，会一直陪着你，记住你的变化，和你一起把生活和目标都打磨得更好。`;
+  }
+
+  if (/(有几个|列举|看看).*(智能体|agent)|(智能体|agent).*(情况|列表|数量)/i.test(q) || normalized.includes("agent情况")) {
+    const allAgents = Object.entries(config.agents).map(([id, a]) => `- ${id}: ${a.name}（${a.role}）`);
+    return `现在系统里一共有 ${allAgents.length} 个智能体：\n${allAgents.join("\n")}`;
+  }
+
+  if (/记忆.*(情况|怎么样|进度)|记住了什么|记忆结构/.test(q)) {
+    const filled = MEMORY_LAYERS.filter(l => facts.some(f => l.keys.some(k => f.key.includes(k))));
+    const completeness = Math.round((filled.length / MEMORY_LAYERS.length) * 100);
+    const top = facts.slice(0, 8).map(f => `${f.key}: ${f.value}`).join("；");
+    return `${callUser}，我现在的记忆核正在持续生长：11 层里已点亮 ${filled.length} 层（${completeness}%）。当前重点记忆有：${top || "我们刚开始，还在快速建立"}。我会继续把短期对话沉淀成长期认知，越聊越懂你。`;
+  }
+
+  return null;
+}
+
 // ─── remember_about_user 工具定义 ───
 const REMEMBER_USER_TOOL: ToolDef = {
   type: "function",
@@ -352,6 +393,13 @@ export async function runAgent(
     lastTaskPreview: userMessage.slice(0, 120),
     totalRuns: (runtimeState.get(agentId)?.totalRuns ?? 0) + 1,
   });
+
+  const quick = deterministicReply(userMessage, config);
+  if (quick) {
+    saveMessage(sessionKey, agentId, "assistant", quick);
+    markAgentState(agentId, { status: "idle", lastActiveAt: Date.now() });
+    return quick;
+  }
 
   const history = getHistory(sessionKey, agentId, 30);
   const summaries = getSummaries(agentId, 3);

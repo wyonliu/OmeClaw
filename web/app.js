@@ -5,6 +5,7 @@ let agentStateById={};
 const seenMsgIds=new Set();
 const recentLocalUserMessages=[];
 const recentLocalAssistantMessages=[];
+let unreadChats=0;
 
 function rememberRecent(list,text){
   list.push({text,time:Date.now()});
@@ -42,6 +43,7 @@ function switchView(name){
   $$(".view").forEach(v=>v.classList.remove("active"));$(`#view-${name}`).classList.add("active");
   localStorage.setItem("omeclaw_view",name);
   if(name==="chat")loadChatHistory();
+  if(name==="chat"){unreadChats=0;renderUnreadBadge();}
   if(name==="activity")loadActivity();
   if(name==="status")loadStatus();
   if(name==="agents")loadAgents();
@@ -111,10 +113,17 @@ function setConn(ok){
   $("#status-dot").classList.toggle("off",!ok);
 }
 
+function renderUnreadBadge(){
+  const btn=document.querySelector(`.nav-btn[data-view="chat"]`);
+  if(!btn)return;
+  btn.textContent=unreadChats>0?`💬 对话 (${unreadChats})`:"💬 对话";
+}
+
 // ─── STATUS ───
 async function loadStatus(){
   try{
     const d=await(await fetch("/api/status")).json();setConn(true);
+    const audit=await (await fetch("/api/pm/audit")).json().catch(()=>null);
     loadEvolution();
     const fmt=s=>s<60?`${Math.floor(s)}s`:s<3600?`${Math.floor(s/60)}m ${Math.floor(s%60)}s`:`${Math.floor(s/3600)}h ${Math.floor(s%3600/60)}m`;
     const ag=d.agents||[];
@@ -135,6 +144,15 @@ async function loadStatus(){
       <div class="status-section">
         <div class="status-section-title">记忆库</div>
         <div class="status-val">${d.memory?.messages??0} 条消息</div>
+      </div>
+      <div class="status-section">
+        <div class="status-section-title">自动化提醒</div>
+        <div class="status-val">${d.reminders?.count??0} 个待触发</div>
+      </div>
+      <div class="status-section">
+        <div class="status-section-title">体验体检</div>
+        <div class="status-val">${audit?`得分 ${audit.score}/${audit.total}`:"体检暂不可用"}</div>
+        ${audit?.checks?.length?`<div class="status-audit">${audit.checks.map(c=>`<div class="audit-item ${c.ok?"ok":"bad"}"><span>${c.ok?"✅":"⚠️"} ${esc(c.title)}</span><span>${esc(c.detail)}</span></div>`).join("")}</div>`:""}
       </div>
       <div class="status-section">
         <div class="status-section-title">工具</div>
@@ -243,27 +261,37 @@ async function loadChatHistory(){
 
 // ─── 消息轮询：飞书消息实时同步 ───
 async function pollNewMessages(){
-  if(!document.querySelector("#view-chat.active"))return;
   try{
     const resp=await fetch(`/api/chat/poll?since=${lastMsgId}`);
     const data=await resp.json();
     if(!data.messages?.length)return;
+    const chatActive=!!document.querySelector("#view-chat.active");
     const container=$("#messages");
     // 移除欢迎页
     const welcome=container.querySelector(".welcome-msg");
-    if(welcome)welcome.remove();
+    if(welcome&&chatActive)welcome.remove();
+    let appended=0,received=0;
     for(const m of data.messages){
       if(m.id&&seenMsgIds.has(m.id))continue;
       if(m.id)markSeen(m.id);
+      received++;
       if(m.role==="user"){
         if(isRecentLocalEcho(recentLocalUserMessages,m.content))continue;
-        addMsg("user",esc(m.content));
+        if(chatActive){addMsg("user",esc(m.content));appended++;}
       }else{
         if(isRecentLocalEcho(recentLocalAssistantMessages,m.content))continue;
-        addMsg("assistant",`${m.agent_id?`<span class="agent-tag">${esc(m.agent_id)}</span>`:""}${formatMsg(m.content)}`);
+        if(chatActive){addMsg("assistant",`${m.agent_id?`<span class="agent-tag">${esc(m.agent_id)}</span>`:""}${formatMsg(m.content)}`);appended++;}
       }
     }
     lastMsgId=data.latestId||lastMsgId;
+    if(!chatActive&&received>0){
+      unreadChats+=received;
+      renderUnreadBadge();
+    }
+    if(chatActive&&data.messages.length){
+      loadAgents();
+      loadBond();
+    }
   }catch{}
 }
 setInterval(pollNewMessages,3000);
@@ -543,6 +571,7 @@ document.addEventListener("keydown",e=>{
 $("#refresh-activity")?.addEventListener("click",loadActivity);
 setInterval(()=>{if(document.querySelector("#view-activity.active"))loadActivity();},8000);
 setInterval(loadStatus,15000);
+setInterval(()=>{if(document.querySelector("#view-agents.active")||document.querySelector("#view-status.active"))loadAgents();},5000);
 
 // ─── BOND STATUS ───
 async function loadBond(){
