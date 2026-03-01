@@ -1,6 +1,6 @@
 {
   "name": "omeclaw",
-  "version": "0.6.0",
+  "version": "0.6.0-mobile",
   "description": "养一只属于你的数字分身 — 语音交互 · 主动触达 · 11层记忆 · 雷达图 · MBTI · 数据导入 · 养成系统 · 开源可控",
   "type": "module",
   "bin": { "omeclaw": "./dist/cli.js" },

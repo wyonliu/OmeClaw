@@ -2,150 +2,213 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#7c6cf0">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>OmeClaw — 你的专属分身</title>
+  <title>OmeClaw — 你的AI分身</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪼</text></svg>">
   <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="app">
-    <aside class="sidebar">
-      <div class="logo">🪼 OmeClaw</div>
-      <div class="bond-card" id="bond-card">
-        <div class="bond-emoji" id="bond-emoji">🫧</div>
-        <div class="bond-info">
-          <div class="bond-name" id="bond-name">还没名字</div>
-          <div class="bond-level" id="bond-level">初见</div>
-          <div class="bond-progress" id="bond-progress"></div>
-        </div>
-        <span class="bond-mood" id="bond-mood"></span>
-      </div>
-      <div class="sidebar-section">
-        <button class="nav-btn active" data-view="chat">💬 对话</button>
-        <button class="nav-btn" data-view="agents">🧬 分身体</button>
-        <button class="nav-btn" data-view="activity">📡 日志</button>
-        <button class="nav-btn" data-view="memory">🧠 记忆核</button>
-        <button class="nav-btn" data-view="status">⚙️ 中枢</button>
-      </div>
-      <div class="sidebar-section agent-list" id="sidebar-agents"></div>
-      <div class="sidebar-footer">
-        <span class="status-dot" id="status-dot"></span>
-        <span id="conn-status">连接中...</span>
-      </div>
-    </aside>
-
-    <!-- Mobile Bottom Nav -->
-    <nav class="mobile-nav" id="mobile-nav">
-      <button class="mob-tab active" data-view="chat"><span class="mob-icon">💬</span><span class="mob-label">对话</span></button>
-      <button class="mob-tab" data-view="memory"><span class="mob-icon">🧠</span><span class="mob-label">记忆</span></button>
-      <button class="mob-tab" data-view="agents"><span class="mob-icon">🧬</span><span class="mob-label">分身</span></button>
-      <button class="mob-tab" data-view="activity"><span class="mob-icon">📡</span><span class="mob-label">日志</span></button>
-      <button class="mob-tab" data-view="status"><span class="mob-icon">⚙️</span><span class="mob-label">中枢</span></button>
-    </nav>
-
+    <!-- 主内容区 -->
     <main class="content">
-      <!-- Chat -->
+      <!-- 💬 对话页 -->
       <div id="view-chat" class="view active">
-        <div class="view-header">
-          <h2 id="chat-agent-name">Agent0</h2>
+        <div class="chat-header">
+          <div class="avatar-status">
+            <div class="avatar" id="avatar">🪼</div>
+            <div class="status-indicator" id="status-indicator"></div>
+          </div>
+          <div class="header-info">
+            <h1 id="agent-name">小O</h1>
+            <p id="agent-status">在线</p>
+          </div>
           <div class="header-actions">
-            <button class="icon-btn" id="tts-btn" onclick="toggleTTS()" title="语音播报">🔇</button>
-            <select id="agent-select" class="header-select"></select>
+            <button class="icon-btn" id="tts-toggle" title="语音播报">🔇</button>
           </div>
         </div>
         <div id="messages" class="messages"></div>
-        <form id="chat-form" class="chat-input">
-          <button type="button" class="icon-btn mic-btn" id="mic-btn" onclick="toggleVoice()" title="语音输入">🎤</button>
-          <input type="text" id="chat-input" placeholder="说点什么…" autocomplete="off">
-          <button type="submit" id="send-btn">发送</button>
+        <div class="daily-topic" id="daily-topic" style="display:none">
+          <span class="topic-icon">💭</span>
+          <span class="topic-text" id="topic-text"></span>
+        </div>
+        <form id="chat-form" class="chat-input-bar">
+          <button type="button" class="voice-btn" id="voice-btn">
+            <span class="voice-icon">🎤</span>
+            <span class="voice-wave" id="voice-wave"></span>
+          </button>
+          <input type="text" id="chat-input" placeholder="说点什么…">
+          <button type="submit" class="send-btn" id="send-btn">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M2 10l16-8-8 16-2-6-6-2z"/></svg>
+          </button>
         </form>
       </div>
 
-      <!-- Agents -->
-      <div id="view-agents" class="view">
-        <div class="view-header"><h2>分身体管理</h2><button class="btn-primary" id="create-agent-btn">+ 唤醒新分身</button></div>
-        <div id="agents-grid" class="card-grid"></div>
-        <div class="modal" id="create-modal" style="display:none">
-          <div class="modal-content">
-            <h3>创建新 Agent</h3>
-            <label>ID <input id="new-id" placeholder="e.g. translator"></label>
-            <label>Name <input id="new-name" placeholder="e.g. 翻译专家"></label>
-            <label>Model <input id="new-model" placeholder="e.g. main:deepseek-chat" value="main:deepseek-chat"></label>
-            <label>Role <select id="new-role"><option value="worker">Worker</option><option value="specialist">Specialist</option><option value="orchestrator">Orchestrator</option></select></label>
-            <label>System Prompt <textarea id="new-prompt" rows="3" placeholder="你是一个..."></textarea></label>
-            <label>Tools <input id="new-tools" placeholder="web_fetch, web_search (逗号分隔)"></label>
-            <div class="modal-actions"><button class="btn-secondary" id="cancel-create">取消</button><button class="btn-primary" id="confirm-create">创建</button></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Activity -->
-      <div id="view-activity" class="view">
-        <div class="view-header"><h2>系统日志</h2><button class="btn-secondary" id="refresh-activity">刷新</button></div>
-        <div id="activity-log" class="timeline"></div>
-      </div>
-
-      <!-- Memory -->
+      <!-- 🧠 记忆页 -->
       <div id="view-memory" class="view">
-        <div class="view-header">
-          <h2>记忆核心</h2>
-          <div class="mem-actions">
-            <div class="search-group"><input type="text" id="mem-q" placeholder="搜索记忆..."><button class="btn-primary" id="mem-search-btn">搜索</button></div>
-            <button class="btn-secondary" id="mem-view-all-btn">全部</button>
-            <button class="btn-secondary" id="mem-copy-btn">复制</button>
-            <button class="btn-secondary" id="import-btn">📥 导入</button>
-            <button class="btn-secondary" id="share-btn">📤 分享</button>
-            <button class="btn-secondary" id="mbti-test-btn">🧪 MBTI</button>
+        <div class="view-header-simple">
+          <h2>🧠 记忆核心</h2>
+          <div class="header-btns">
+            <button class="icon-btn" id="import-btn">📥</button>
+            <button class="icon-btn" id="share-btn">📤</button>
           </div>
         </div>
-        <div id="mem-results" class="memory-view"></div>
+        <div class="memory-hero">
+          <canvas id="memory-planet" width="300" height="300"></canvas>
+          <div class="memory-stats">
+            <div class="stat-item">
+              <span class="stat-value" id="memory-pct">0%</span>
+              <span class="stat-label">完成度</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value" id="memory-count">0</span>
+              <span class="stat-label">记忆</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value" id="memory-layers">0/11</span>
+              <span class="stat-label">维度</span>
+            </div>
+          </div>
+        </div>
+        <div class="memory-categories" id="memory-categories"></div>
       </div>
 
-      <!-- Status -->
-      <div id="view-status" class="view">
-        <div class="view-header"><h2>系统中枢</h2></div>
-        <div id="status-grid" class="card-grid"></div>
-        <div class="evolution-section">
-          <h3 class="evolution-title">🔄 自进化</h3>
-          <div id="evolution-list" class="evolution-list"></div>
+      <!-- 🎯 养成页 -->
+      <div id="view-grow" class="view">
+        <div class="grow-hero">
+          <div class="grow-avatar" id="grow-avatar">🪼</div>
+          <h2 id="grow-name">小O</h2>
+          <p id="grow-level">初见</p>
         </div>
+        <div class="bond-progress-card">
+          <div class="bond-bar">
+            <div class="bond-fill" id="bond-fill"></div>
+          </div>
+          <div class="bond-info">
+            <span id="bond-xp">0 XP</span>
+            <span id="bond-next">→ 认识中 (50 XP)</span>
+          </div>
+        </div>
+        <div class="streak-card">
+          <span class="streak-icon">🔥</span>
+          <div class="streak-info">
+            <span class="streak-num" id="streak-num">0</span>
+            <span class="streak-label">天连续对话</span>
+          </div>
+        </div>
+        <div class="achievements-section">
+          <h3>🏆 成就</h3>
+          <div class="achievements-grid" id="achievements-grid"></div>
+        </div>
+        <div class="tasks-section">
+          <h3>📋 每日任务</h3>
+          <div class="tasks-list" id="tasks-list"></div>
+        </div>
+      </div>
+
+      <!-- 👤 我的页 -->
+      <div id="view-me" class="view">
+        <div class="view-header-simple">
+          <h2>👤 我的</h2>
+        </div>
+        <div class="settings-list">
+          <button class="setting-item" id="mbti-test-btn">
+            <span class="setting-icon">🧪</span>
+            <span class="setting-text">人格测试</span>
+            <span class="setting-arrow">›</span>
+          </button>
+          <button class="setting-item" id="agents-manage-btn">
+            <span class="setting-icon">🧬</span>
+            <span class="setting-text">Agent 管理</span>
+            <span class="setting-arrow">›</span>
+          </button>
+          <button class="setting-item" id="activity-log-btn">
+            <span class="setting-icon">📡</span>
+            <span class="setting-text">系统日志</span>
+            <span class="setting-arrow">›</span>
+          </button>
+          <button class="setting-item" id="theme-btn">
+            <span class="setting-icon">🎨</span>
+            <span class="setting-text">主题</span>
+            <span class="setting-value" id="theme-value">暗黑</span>
+          </button>
+          <button class="setting-item" id="about-btn">
+            <span class="setting-icon">ℹ️</span>
+            <span class="setting-text">关于</span>
+            <span class="setting-arrow">›</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Agent 管理（子页面） -->
+      <div id="view-agents" class="view subview">
+        <div class="subview-header">
+          <button class="back-btn" onclick="goBack()">‹</button>
+          <h2>Agent 管理</h2>
+          <button class="icon-btn" id="create-agent-btn">+</button>
+        </div>
+        <div class="agents-list" id="agents-list"></div>
+      </div>
+
+      <!-- 系统日志（子页面） -->
+      <div id="view-activity" class="view subview">
+        <div class="subview-header">
+          <button class="back-btn" onclick="goBack()">‹</button>
+          <h2>系统日志</h2>
+          <button class="icon-btn" id="refresh-activity">↻</button>
+        </div>
+        <div class="activity-timeline" id="activity-timeline"></div>
       </div>
     </main>
+
+    <!-- 底部导航 -->
+    <nav class="bottom-nav">
+      <button class="nav-tab active" data-view="chat">
+        <span class="tab-icon">💬</span>
+        <span class="tab-label">对话</span>
+      </button>
+      <button class="nav-tab" data-view="memory">
+        <span class="tab-icon">🧠</span>
+        <span class="tab-label">记忆</span>
+      </button>
+      <button class="nav-tab" data-view="grow">
+        <span class="tab-icon">🎯</span>
+        <span class="tab-label">养成</span>
+      </button>
+      <button class="nav-tab" data-view="me">
+        <span class="tab-icon">👤</span>
+        <span class="tab-label">我的</span>
+      </button>
+    </nav>
   </div>
-  <div id="memory-toast-container"></div>
-  
-  <!-- Onboarding -->
+
+  <!-- 引导弹窗 -->
   <div id="onboarding-modal" class="modal" style="display:none">
-    <div class="modal-content onboarding-content">
-      <div class="onboarding-header"><span class="onboarding-logo">🪼</span><span class="onboarding-title-text">初次见面，先认识一下？</span></div>
-      <div class="onboarding-progress"><div class="onboarding-progress-fill" id="onboarding-progress"></div></div>
-      <div id="onboarding-step"></div>
-      <div class="onboarding-actions"><button class="btn-secondary" id="onboarding-skip">跳过</button><button class="btn-primary" id="onboarding-next">下一步</button></div>
+    <div class="modal-card onboarding-card">
+      <div class="onboarding-logo">🪼</div>
+      <h2 id="onboarding-title">初次见面</h2>
+      <p id="onboarding-desc">先快速认识一下？</p>
+      <div class="onboarding-progress">
+        <div class="progress-fill" id="onboarding-progress"></div>
+      </div>
+      <div id="onboarding-content"></div>
+      <div class="onboarding-actions">
+        <button class="btn-text" id="onboarding-skip">跳过</button>
+        <button class="btn-primary" id="onboarding-next">下一步</button>
+      </div>
     </div>
   </div>
 
-  <!-- Import Modal -->
-  <div id="import-modal" class="modal" style="display:none">
-    <div class="modal-content">
-      <h3>📥 数据导入</h3>
-      <p style="font-size:12px;color:var(--text2);margin-bottom:12px">粘贴聊天记录、日记、备忘录等文本，系统会自动提取你的画像信息。</p>
-      <textarea id="import-text" rows="8" placeholder="粘贴你的文本到这里...&#10;支持聊天记录、日记、个人简介等任何包含个人信息的文本。"></textarea>
-      <div class="modal-actions"><button class="btn-secondary" id="cancel-import">取消</button><button class="btn-primary" id="confirm-import">导入</button></div>
-    </div>
+  <!-- 通用弹窗 -->
+  <div id="modal-overlay" class="modal-overlay" style="display:none">
+    <div class="modal-card" id="modal-card"></div>
   </div>
 
-  <!-- MBTI Modal -->
-  <div id="mbti-modal" class="modal" style="display:none">
-    <div class="modal-content">
-      <h3>🧪 快速人格测试</h3>
-      <div id="mbti-step"></div>
-      <div class="modal-actions"><button class="btn-secondary" id="cancel-mbti">关闭</button></div>
-    </div>
-  </div>
+  <!-- Toast 容器 -->
+  <div id="toast-container"></div>
 
   <script src="app.js"></script>
 </body>

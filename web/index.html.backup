@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#7c6cf0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>OmeClaw — 你的专属分身</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪼</text></svg>">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="logo">🪼 OmeClaw</div>
+      <div class="bond-card" id="bond-card">
+        <div class="bond-emoji" id="bond-emoji">🫧</div>
+        <div class="bond-info">
+          <div class="bond-name" id="bond-name">还没名字</div>
+          <div class="bond-level" id="bond-level">初见</div>
+          <div class="bond-progress" id="bond-progress"></div>
+        </div>
+        <span class="bond-mood" id="bond-mood"></span>
+      </div>
+      <div class="sidebar-section">
+        <button class="nav-btn active" data-view="chat">💬 对话</button>
+        <button class="nav-btn" data-view="agents">🧬 分身体</button>
+        <button class="nav-btn" data-view="activity">📡 日志</button>
+        <button class="nav-btn" data-view="memory">🧠 记忆核</button>
+        <button class="nav-btn" data-view="status">⚙️ 中枢</button>
+      </div>
+      <div class="sidebar-section agent-list" id="sidebar-agents"></div>
+      <div class="sidebar-footer">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="conn-status">连接中...</span>
+      </div>
+    </aside>
+
+    <!-- Mobile Bottom Nav -->
+    <nav class="mobile-nav" id="mobile-nav">
+      <button class="mob-tab active" data-view="chat"><span class="mob-icon">💬</span><span class="mob-label">对话</span></button>
+      <button class="mob-tab" data-view="memory"><span class="mob-icon">🧠</span><span class="mob-label">记忆</span></button>
+      <button class="mob-tab" data-view="agents"><span class="mob-icon">🧬</span><span class="mob-label">分身</span></button>
+      <button class="mob-tab" data-view="activity"><span class="mob-icon">📡</span><span class="mob-label">日志</span></button>
+      <button class="mob-tab" data-view="status"><span class="mob-icon">⚙️</span><span class="mob-label">中枢</span></button>
+    </nav>
+
+    <main class="content">
+      <!-- Chat -->
+      <div id="view-chat" class="view active">
+        <div class="view-header">
+          <h2 id="chat-agent-name">Agent0</h2>
+          <div class="header-actions">
+            <button class="icon-btn" id="tts-btn" onclick="toggleTTS()" title="语音播报">🔇</button>
+            <select id="agent-select" class="header-select"></select>
+          </div>
+        </div>
+        <div id="messages" class="messages"></div>
+        <form id="chat-form" class="chat-input">
+          <button type="button" class="icon-btn mic-btn" id="mic-btn" onclick="toggleVoice()" title="语音输入">🎤</button>
+          <input type="text" id="chat-input" placeholder="说点什么…" autocomplete="off">
+          <button type="submit" id="send-btn">发送</button>
+        </form>
+      </div>
+
+      <!-- Agents -->
+      <div id="view-agents" class="view">
+        <div class="view-header"><h2>分身体管理</h2><button class="btn-primary" id="create-agent-btn">+ 唤醒新分身</button></div>
+        <div id="agents-grid" class="card-grid"></div>
+        <div class="modal" id="create-modal" style="display:none">
+          <div class="modal-content">
+            <h3>创建新 Agent</h3>
+            <label>ID <input id="new-id" placeholder="e.g. translator"></label>
+            <label>Name <input id="new-name" placeholder="e.g. 翻译专家"></label>
+            <label>Model <input id="new-model" placeholder="e.g. main:deepseek-chat" value="main:deepseek-chat"></label>
+            <label>Role <select id="new-role"><option value="worker">Worker</option><option value="specialist">Specialist</option><option value="orchestrator">Orchestrator</option></select></label>
+            <label>System Prompt <textarea id="new-prompt" rows="3" placeholder="你是一个..."></textarea></label>
+            <label>Tools <input id="new-tools" placeholder="web_fetch, web_search (逗号分隔)"></label>
+            <div class="modal-actions"><button class="btn-secondary" id="cancel-create">取消</button><button class="btn-primary" id="confirm-create">创建</button></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Activity -->
+      <div id="view-activity" class="view">
+        <div class="view-header"><h2>系统日志</h2><button class="btn-secondary" id="refresh-activity">刷新</button></div>
+        <div id="activity-log" class="timeline"></div>
+      </div>
+
+      <!-- Memory -->
+      <div id="view-memory" class="view">
+        <div class="view-header">
+          <h2>记忆核心</h2>
+          <div class="mem-actions">
+            <div class="search-group"><input type="text" id="mem-q" placeholder="搜索记忆..."><button class="btn-primary" id="mem-search-btn">搜索</button></div>
+            <button class="btn-secondary" id="mem-view-all-btn">全部</button>
+            <button class="btn-secondary" id="mem-copy-btn">复制</button>
+            <button class="btn-secondary" id="import-btn">📥 导入</button>
+            <button class="btn-secondary" id="share-btn">📤 分享</button>
+            <button class="btn-secondary" id="mbti-test-btn">🧪 MBTI</button>
+          </div>
+        </div>
+        <div id="mem-results" class="memory-view"></div>
+      </div>
+
+      <!-- Status -->
+      <div id="view-status" class="view">
+        <div class="view-header"><h2>系统中枢</h2></div>
+        <div id="status-grid" class="card-grid"></div>
+        <div class="evolution-section">
+          <h3 class="evolution-title">🔄 自进化</h3>
+          <div id="evolution-list" class="evolution-list"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div id="memory-toast-container"></div>
+  
+  <!-- Onboarding -->
+  <div id="onboarding-modal" class="modal" style="display:none">
+    <div class="modal-content onboarding-content">
+      <div class="onboarding-header"><span class="onboarding-logo">🪼</span><span class="onboarding-title-text">初次见面，先认识一下？</span></div>
+      <div class="onboarding-progress"><div class="onboarding-progress-fill" id="onboarding-progress"></div></div>
+      <div id="onboarding-step"></div>
+      <div class="onboarding-actions"><button class="btn-secondary" id="onboarding-skip">跳过</button><button class="btn-primary" id="onboarding-next">下一步</button></div>
+    </div>
+  </div>
+
+  <!-- Import Modal -->
+  <div id="import-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <h3>📥 数据导入</h3>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:12px">粘贴聊天记录、日记、备忘录等文本，系统会自动提取你的画像信息。</p>
+      <textarea id="import-text" rows="8" placeholder="粘贴你的文本到这里...&#10;支持聊天记录、日记、个人简介等任何包含个人信息的文本。"></textarea>
+      <div class="modal-actions"><button class="btn-secondary" id="cancel-import">取消</button><button class="btn-primary" id="confirm-import">导入</button></div>
+    </div>
+  </div>
+
+  <!-- MBTI Modal -->
+  <div id="mbti-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <h3>🧪 快速人格测试</h3>
+      <div id="mbti-step"></div>
+      <div class="modal-actions"><button class="btn-secondary" id="cancel-mbti">关闭</button></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
