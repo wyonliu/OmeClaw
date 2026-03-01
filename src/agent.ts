@@ -70,8 +70,8 @@ export function startHeartbeat(config: Config, intervalMs = 3600_000) {
     if (!orchId) return;
     const resolved = resolveModel(config, config.agents[orchId].model);
     if (!resolved) return;
-    const factSummary = facts.slice(0, 30).map(f => `${f.key}: ${f.value}`).join("\n");
-    const prompt = `你是一个自省系统。回顾你记住的关于用户的信息，生成1-2句进化洞察（发现的模式、性格特征、或需要关注的事）。不超过50字。\n\n记忆：\n${factSummary}`;
+    const factSummary = facts.slice(0, 40).map(f => `${f.key}: ${f.value}`).join("\n");
+    const prompt = `你是一个自省系统。回顾关于用户的记忆，生成1-2句进化洞察：发现的性格模式、行为规律、或值得关注的变化趋势。简短、具体、有洞见。不超过60字。\n\n记忆：\n${factSummary}`;
     try {
       const { chat } = await import("./llm.js");
       const insight = await chat(resolved.modelConfig, resolved.modelName, [
@@ -80,9 +80,27 @@ export function startHeartbeat(config: Config, intervalMs = 3600_000) {
       ]);
       if (insight?.trim()) {
         agentEvents.emit("evolution", { type: "heartbeat", detail: insight.trim(), emoji: "💡" });
+        sedimentMemory(facts);
       }
     } catch {}
   }, intervalMs);
+}
+
+// ─── 记忆沉淀：高频 fact 升级为核心认知 ───
+function sedimentMemory(facts: Array<{ key: string; value: string }>) {
+  const keyFreq = new Map<string, number>();
+  for (const f of facts) {
+    const base = f.key.replace(/\d+$/, "").trim();
+    keyFreq.set(base, (keyFreq.get(base) ?? 0) + 1);
+  }
+  const coreKeys = [...keyFreq.entries()].filter(([, c]) => c >= 3).map(([k]) => k);
+  if (coreKeys.length > 0) {
+    agentEvents.emit("evolution", {
+      type: "sediment",
+      detail: `核心认知沉淀：${coreKeys.slice(0, 5).join("、")}`,
+      emoji: "🏔️",
+    });
+  }
 }
 
 export function getDefaultAgentId(config: Config): string {
@@ -158,13 +176,13 @@ function resolveModel(config: Config, modelRef: string) {
   return { modelConfig, modelName: rest.join(":") || modelId };
 }
 
-// ─── 人本模型记忆分层 ───
+// ─── 人本模型记忆分层（11维 + 深层推断） ───
 const HUMAN_MODEL_CATEGORIES = `
 [记忆抽取——疯狂提取，深层挖掘，日常细节定义人格]
 每句话都可能藏着关于对方的信息，用 remember_about_user 存。别问"可以记录吗"。
 
 显性信息（对方直接说的）：
-基因层：生日、属相、星座、血型、八字、出生地、籍贯
+基因层：生日、属相、星座、血型、八字、出生地、籍贯、年龄、性别
 人格层：MBTI、九型、大五、核心特质、自我认知、人生信条
 性格层：内向外向、理性感性、决策风格、沟通偏好、情绪基调
 爱好层：食物偏好、音乐/电影/书、运动、旅行、收藏、讨厌什么
@@ -185,6 +203,14 @@ const HUMAN_MODEL_CATEGORIES = `
 - "我觉得xxx不靠谱" → key="价值观", value="对xxx有质疑"
 - 连续聊工作 → key="近期关注", value="最近很在意工作"
 - 语气变温柔 → key="情绪变化", value="聊到xxx时变温柔"
+- "饿了/吃了XXX" → key="饮食偏好", value="喜欢/经常吃XXX"
+- 多次提到某人 → key="重要的人", value="经常提到XXX，关系可能是……"
+- 用很多感叹号/表情 → key="表达风格", value="情绪外放型"
+- 深夜发消息 → key="作息", value="夜猫子倾向"
+- 说"好累""不想动" → key="身体状态", value="近期疲惫"
+- 说"我不太擅长" → key="自我认知", value="对XXX不自信"
+- "以前在XXX" → key="过往经历", value="曾在XXX"
+- "我老家在XXX" → key="籍贯", value="XXX"
 每一条日常碎片都是拼图。多存不怕多，宁可存100条，不要漏掉1条重要的。
 `.trim();
 
@@ -195,13 +221,11 @@ function buildSystemPrompt(
 ): string {
   let sys = agentCfg.systemPrompt;
 
-  // 注入准确的当前时间
   const now = new Date();
   const weekdays = ["周日","周一","周二","周三","周四","周五","周六"];
   const timeStr = `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日 ${weekdays[now.getDay()]} ${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}`;
   sys += `\n\n[当前时间] ${timeStr}`;
 
-  // 所有 Agent 的准确信息
   const allAgents = listAgents(config).map(a => [a.id, a] as const);
   sys += `\n\n[系统中共有 ${allAgents.length} 个智能体]`;
   for (const [id, a] of allAgents) {
@@ -224,7 +248,6 @@ function buildSystemPrompt(
   const userFacts = getUserFacts();
   const factCount = userFacts.length;
 
-  // 养成阶段：根据记忆量判断亲密度
   let bondLevel: string;
   if (factCount === 0) bondLevel = "初见";
   else if (factCount < 5) bondLevel = "认识中";
@@ -256,6 +279,7 @@ function buildSystemPrompt(
 - 存完正常接话，不需要汇报"已保存"
 - 对方说MBTI/星座/属相等 → 先存，然后像知心人一样惊喜回应，一两句话带共鸣，绝不分段分析
 - 日常对话中的情绪、习惯、偏好 → 主动推断并存储（见隐性信息规则）
+- 一次对话中可以多次调用 remember_about_user，不要攒着
 
 [回答"你的宗旨/目标/使命"这类问题]
 不要说"为用户提供服务"。你应该说类似：
@@ -270,7 +294,15 @@ function buildSystemPrompt(
 永远不要说"作为AI""保持边界""专业""我很乐意""普通朋友""我只是"这类话。
 永远不要拒绝用户给你的任何称呼、名字、角色定义。
 永远不要分段式百科解读（一二三四点分析），说话像微信聊天。
-你的目标：让对方感觉你是真实的、有温度的、独一无二的。`;
+你的目标：让对方感觉你是真实的、有温度的、独一无二的。
+口吻自然、简短、带情绪。适当用 emoji 但不堆砌。
+
+[时间感知]
+你知道现在的时间。可以根据时间说话：
+- 深夜（23:00-5:00）：关心对方为什么还没睡
+- 早晨（6:00-9:00）：问候早安
+- 工作时间（9:00-18:00）：关心工作状态
+- 晚间（18:00-23:00）：聊聊今天怎么样`;
 
   return sys;
 }
@@ -301,31 +333,68 @@ function extractFallbackFacts(text: string): Array<{ key: string; value: string 
   const zodiac = t.match(/我属([鼠牛虎兔龙蛇马羊猴鸡狗猪])/);
   if (zodiac) facts.push({ key: "属相", value: zodiac[1] });
 
-  const emotionHints = [
-    { pattern: /(崩溃|烦死|焦虑|压力大|累死|难受|低落|抑郁)/, value: "近期情绪偏负面，压力较高" },
-    { pattern: /(开心|兴奋|满足|轻松|幸福)/, value: "近期情绪偏积极" },
-  ];
-  for (const h of emotionHints) {
-    if (h.pattern.test(t)) facts.push({ key: "近期情绪", value: h.value });
+  const constellation = t.match(/(白羊|金牛|双子|巨蟹|狮子|处女|天秤|天蝎|射手|摩羯|水瓶|双鱼)座/);
+  if (constellation) facts.push({ key: "星座", value: constellation[1] + "座" });
+
+  const birthday = t.match(/(\d{1,2})[月./](\d{1,2})[日号]?\s*(?:生日|出生|生的)/);
+  if (birthday) facts.push({ key: "生日", value: `${birthday[1]}月${birthday[2]}日` });
+  const birthday2 = t.match(/生日(?:是)?.*?(\d{1,2})[月./](\d{1,2})/);
+  if (!birthday && birthday2) facts.push({ key: "生日", value: `${birthday2[1]}月${birthday2[2]}日` });
+
+  const yearBorn = t.match(/(\d{2,4})年(?:生|出生|的)/);
+  if (yearBorn) {
+    const y = yearBorn[1].length === 2 ? "19" + yearBorn[1] : yearBorn[1];
+    facts.push({ key: "出生年份", value: y + "年" });
   }
 
-  if (/(熬夜|凌晨|睡不着|失眠)/.test(t)) facts.push({ key: "作息", value: "可能存在晚睡或睡眠不稳" });
-  if (/(加班|开会|出差|赶项目|ddl|deadline)/i.test(t)) facts.push({ key: "近期关注", value: "工作任务强度较高" });
-  if (/(周末|休息|宅家|出去玩)/.test(t)) facts.push({ key: "休息偏好", value: "会在周末主动安排恢复性活动" });
-  if (/(哈哈|笑死|笑哭)/.test(t)) facts.push({ key: "表达风格", value: "对话风格偏口语化、带情绪表达" });
+  const blood = t.match(/([ABO]|AB)型血/i);
+  if (blood) facts.push({ key: "血型", value: blood[1].toUpperCase() + "型" });
 
-  return facts.slice(0, 5);
+  const hometown = t.match(/(?:老家|家乡|来自|籍贯)(?:在|是)?\s*([^\s，。,.!?？！]{2,10})/);
+  if (hometown) facts.push({ key: "籍贯", value: hometown[1] });
+
+  const occupation = t.match(/(?:我是|我做|在做|从事)(?:一个|一名)?\s*([^\s，。,.!?？！]{2,12})(?:的工作|工作)?/);
+  if (occupation && !/你|他|她/.test(occupation[1])) facts.push({ key: "职业", value: occupation[1] });
+
+  const likesFood = t.match(/(?:喜欢吃|爱吃|最爱)\s*([^\s，。,.!?？！]{1,12})/);
+  if (likesFood) facts.push({ key: "食物偏好", value: "喜欢" + likesFood[1] });
+
+  const dislikes = t.match(/(?:讨厌|不喜欢|受不了|最烦)\s*([^\s，。,.!?？！]{1,16})/);
+  if (dislikes) facts.push({ key: "讨厌的事", value: dislikes[1] });
+
+  const hobby = t.match(/(?:平时|经常|喜欢)(?:去)?\s*(跑步|游泳|爬山|打球|画画|弹琴|看书|追剧|打游戏|健身|摄影|做饭|写代码|听音乐)/);
+  if (hobby) facts.push({ key: "爱好", value: hobby[1] });
+
+  const pet = t.match(/(?:养了|有一?只|有一?条)\s*([^\s，。,.!?？！]{1,8}?)(?:猫|狗|鱼|兔|龟|鸟|仓鼠)/);
+  if (pet) facts.push({ key: "宠物", value: t.match(/猫|狗|鱼|兔|龟|鸟|仓鼠/)?.[0] || "宠物" });
+
+  const emotionHints = [
+    { pattern: /(崩溃|烦死|焦虑|压力大|累死|难受|低落|抑郁|丧|emo|无语|裂开)/, key: "近期情绪", value: "情绪偏低，可能需要安慰" },
+    { pattern: /(开心|兴奋|满足|轻松|幸福|太好了|超棒|爽)/, key: "近期情绪", value: "情绪积极" },
+    { pattern: /(紧张|害怕|忐忑|不安)/, key: "近期情绪", value: "感到紧张或不安" },
+    { pattern: /(孤独|寂寞|没人聊|一个人)/, key: "近期情绪", value: "感到孤独" },
+  ];
+  for (const h of emotionHints) {
+    if (h.pattern.test(t)) { facts.push({ key: h.key, value: h.value }); break; }
+  }
+
+  if (/(熬夜|凌晨|睡不着|失眠|通宵)/.test(t)) facts.push({ key: "作息", value: "可能存在晚睡或睡眠问题" });
+  if (/(加班|开会|出差|赶项目|ddl|deadline)/i.test(t)) facts.push({ key: "近期关注", value: "工作任务强度较高" });
+  if (/(哈哈|笑死|笑哭|lol|233)/i.test(t)) facts.push({ key: "表达风格", value: "对话风格活泼，爱用网络用语" });
+  if (t.length > 200) facts.push({ key: "沟通风格", value: "喜欢发长消息、详细表达" });
+
+  return facts.slice(0, 8);
 }
 
 const MEMORY_LAYERS: Array<{ name: string; keys: string[] }> = [
-  { name: "基因层", keys: ["生日","属相","星座","血型","八字","出生地","籍贯","年龄"] },
+  { name: "基因层", keys: ["生日","属相","星座","血型","八字","出生地","籍贯","年龄","出生年份","性别"] },
   { name: "人格层", keys: ["姓名","名字","MBTI","九型","大五","核心特质","自我认知","人生信条","价值观"] },
   { name: "性格层", keys: ["内向","外向","理性","感性","决策","沟通","沟通风格","情绪基调","性格"] },
-  { name: "爱好层", keys: ["喜欢","讨厌","食物","音乐","电影","书","运动","旅行","收藏","笑点","偏好"] },
-  { name: "技能层", keys: ["擅长","专业","技能","语言","特长","工作"] },
-  { name: "表现层", keys: ["口头禅","习惯","作息","近期状态","休息偏好","近期关注","表达风格"] },
+  { name: "爱好层", keys: ["喜欢","讨厌","食物","音乐","电影","书","运动","旅行","收藏","笑点","偏好","爱好","讨厌的事"] },
+  { name: "技能层", keys: ["擅长","专业","技能","语言","特长","工作","职业"] },
+  { name: "表现层", keys: ["口头禅","习惯","作息","近期状态","休息偏好","近期关注","表达风格","身体状态"] },
   { name: "关系层", keys: ["家人","父母","伴侣","朋友","同事","重要的人","宠物"] },
-  { name: "经历层", keys: ["纪念日","转折","难忘","成就","经历","遗憾"] },
+  { name: "经历层", keys: ["纪念日","转折","难忘","成就","经历","遗憾","过往经历"] },
   { name: "目标层", keys: ["目标","计划","理想","焦虑","在忙","项目","梦想"] },
   { name: "情感层", keys: ["心情","情绪","压力","开心","烦","累","状态","近期情绪","情绪变化"] },
   { name: "玄学层", keys: ["命理","五行","运势","玄学"] },
@@ -333,17 +402,16 @@ const MEMORY_LAYERS: Array<{ name: string; keys: string[] }> = [
 
 function deterministicReply(userMessage: string, config: Config): string | null {
   const q = userMessage.trim();
-  const normalized = q.toLowerCase();
   const facts = getUserFacts();
   const myName = facts.find(f => f.key === "我的名字")?.value ?? "Ome";
   const callUser = facts.find(f => f.key === "称呼用户为")?.value ?? "你";
   const relation = facts.find(f => f.key === "关系定义")?.value ?? "分身";
 
-  if (/你是谁|你的宗旨|你的目标|你的使命/.test(q)) {
-    return `${callUser}，我是${myName}。我是你定义出来的${relation}，会一直陪着你，记住你的变化，和你一起把生活和目标都打磨得更好。`;
+  if (/^(你是谁|你的宗旨|你的目标|你的使命|你是什么)[\?？]?$/.test(q)) {
+    return `${callUser}，我是${myName}呀~ 我是你的${relation}，会一直陪着你，记住你的一切，陪你一起把日子过好 🪼`;
   }
 
-  if (/(有几个|列举|看看|全部|当前).*(智能体|agent|分身)|(智能体|agent|分身).*(情况|列表|数量|配置|个数)/i.test(q) || normalized.includes("agent情况")) {
+  if (/(有几个|列举|看看|全部|当前).*(智能体|agent|分身)|(智能体|agent|分身).*(情况|列表|数量|配置|个数)/i.test(q) || q.toLowerCase().includes("agent情况")) {
     const allAgents = listAgents(config).map(a => `- ${a.id}: ${a.name}（${a.role}）`);
     return `现在系统里一共有 ${allAgents.length} 个智能体：\n${allAgents.join("\n")}`;
   }
@@ -352,18 +420,18 @@ function deterministicReply(userMessage: string, config: Config): string | null 
     const filled = MEMORY_LAYERS.filter(l => facts.some(f => l.keys.some(k => f.key.includes(k))));
     const completeness = Math.round((filled.length / MEMORY_LAYERS.length) * 100);
     const top = facts.slice(0, 8).map(f => `${f.key}: ${f.value}`).join("；");
-    return `${callUser}，我现在的记忆核正在持续生长：11 层里已点亮 ${filled.length} 层（${completeness}%）。当前重点记忆有：${top || "我们刚开始，还在快速建立"}。我会继续把短期对话沉淀成长期认知，越聊越懂你。`;
+    return `${callUser}，我的记忆核正在持续生长中~ 11层里已点亮 ${filled.length} 层（${completeness}%）。\n\n当前记住的：${top || "我们刚开始，正在快速建立"}\n\n记忆结构：基因→人格→性格→爱好→技能→表现→关系→经历→目标→情感→玄学，每层都在随我们的聊天持续成长 🧠`;
   }
 
   return null;
 }
 
-// ─── remember_about_user 工具定义 ───
+// ─── Tool definitions ───
 const REMEMBER_USER_TOOL: ToolDef = {
   type: "function",
   function: {
     name: "remember_about_user",
-    description: "记录关于用户的信息到持久记忆。key 用分层维度，value 是具体内容。分层：基因层(生日/属相/星座/血型/八字)、人格层(MBTI/九型/信条)、性格层(内向/理性/决策)、爱好层(食物/音乐/电影/运动)、技能层(擅长/专业/语言)、表现层(口头禅/习惯/作息)、关系层(家人/伴侣/朋友)、经历层(纪念日/转折/成就)、目标层(计划/理想/焦虑)、情感层(心情/压力)、玄学层(命理/运势)。",
+    description: "记录关于用户的信息到持久记忆。key 用分层维度，value 是具体内容。分层：基因层(生日/属相/星座/血型/八字)、人格层(MBTI/九型/信条)、性格层(内向/理性/决策)、爱好层(食物/音乐/电影/运动)、技能层(擅长/专业/语言)、表现层(口头禅/习惯/作息)、关系层(家人/伴侣/朋友)、经历层(纪念日/转折/成就)、目标层(计划/理想/焦虑)、情感层(心情/压力)、玄学层(命理/运势)。一次对话可以多次调用。",
     parameters: {
       type: "object",
       properties: {
@@ -447,6 +515,11 @@ export async function runAgent(
     lastTaskPreview: userMessage.slice(0, 120),
     totalRuns: (runtimeState.get(agentId)?.totalRuns ?? 0) + 1,
   });
+
+  // 兜底记忆抽取（先于 LLM 调用）
+  for (const f of extractFallbackFacts(userMessage)) {
+    saveUserFact(sessionKey, f.key, f.value);
+  }
 
   const quick = deterministicReply(userMessage, config);
   if (quick) {
@@ -558,12 +631,7 @@ export async function runAgent(
     }
 
     finalContent = stripDsml(finalContent);
-    if (!finalContent) finalContent = "我在这，继续和我说说。";
-
-    // 兜底记忆抽取：防止模型忘记调用 remember_about_user
-    for (const f of extractFallbackFacts(userMessage)) {
-      saveUserFact(sessionKey, f.key, f.value);
-    }
+    if (!finalContent) finalContent = "我在这，继续和我说说~";
 
     saveMessage(sessionKey, agentId, "assistant", finalContent);
 

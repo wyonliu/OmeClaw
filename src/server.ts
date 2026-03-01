@@ -141,7 +141,7 @@ export function startServer(config: Config, port: number, configPath?: string) {
     if (url === "/api/status" && method === "GET") {
       const runtime = getAgentRuntimeStates();
       return json(res, {
-        status: "running", version: "0.4.0", uptime: process.uptime(),
+        status: "running", version: "0.5.0", uptime: process.uptime(),
         agents: listAgents(config).map(a => ({ id: a.id, name: a.name, role: a.role })),
         agentRuntime: runtime,
         gateways: allGateways().map(g => g.name),
@@ -457,7 +457,7 @@ export function startServer(config: Config, port: number, configPath?: string) {
   logEvolution("start", "分身系统苏醒", "🪼");
 
   server.listen(port, () => {
-    console.log(`\n  🪼 OmeClaw v0.4.0 — Agent Operating System`);
+    console.log(`\n  🪼 OmeClaw v0.5.0 — Agent Operating System`);
     console.log(`  ──────────────────────────────────────────`);
     console.log(`  📊 Dashboard:   http://localhost:${port}`);
     console.log(`  🔌 API:         http://localhost:${port}/api/status`);

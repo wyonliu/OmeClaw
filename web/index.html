@@ -2,9 +2,13 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#7c6cf0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>OmeClaw — 你的专属分身</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪼</text></svg>">
+  <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -29,7 +33,7 @@
       <div class="sidebar-section agent-list" id="sidebar-agents"></div>
       <div class="sidebar-footer">
         <span class="status-dot" id="status-dot"></span>
-        <span id="conn-status">Connecting...</span>
+        <span id="conn-status">连接中...</span>
       </div>
     </aside>
 
@@ -42,7 +46,7 @@
         </div>
         <div id="messages" class="messages"></div>
         <form id="chat-form" class="chat-input">
-          <input type="text" id="chat-input" placeholder="说点什么..." autocomplete="off">
+          <input type="text" id="chat-input" placeholder="说点什么…" autocomplete="off">
           <button type="submit" id="send-btn">发送</button>
         </form>
       </div>
@@ -77,8 +81,8 @@
           <h2>记忆核心</h2>
           <div class="mem-actions">
             <div class="search-group"><input type="text" id="mem-q" placeholder="搜索记忆..."><button class="btn-primary" id="mem-search-btn">搜索</button></div>
-            <button class="btn-secondary" id="mem-view-all-btn">查看全部</button>
-            <button class="btn-secondary" id="mem-copy-btn">一键复制</button>
+            <button class="btn-secondary" id="mem-view-all-btn">全部</button>
+            <button class="btn-secondary" id="mem-copy-btn">复制</button>
           </div>
         </div>
         <div id="mem-results" class="memory-view"></div>
@@ -100,6 +104,10 @@
   <!-- 60秒引导式人格测试 -->
   <div id="onboarding-modal" class="modal" style="display:none">
     <div class="modal-content onboarding-content">
+      <div class="onboarding-header">
+        <span class="onboarding-logo">🪼</span>
+        <span class="onboarding-title-text">初次见面，先认识一下？</span>
+      </div>
       <div class="onboarding-progress"><div class="onboarding-progress-fill" id="onboarding-progress"></div></div>
       <div id="onboarding-step"></div>
       <div class="onboarding-actions">

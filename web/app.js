@@ -3,26 +3,13 @@ const CHAT_SESSION="owner";
 let curAgent="",agents=[],pendingChats=0,lastMsgId=0;
 let agentStateById={};
 const seenMsgIds=new Set();
-const recentLocalUserMessages=[];
-const recentLocalAssistantMessages=[];
+let chatFullyLoaded=false;
 let unreadChats=0;
+let lastFactCount=0;
+let streakDays=parseInt(localStorage.getItem("omeclaw_streak")||"0");
+let lastActiveDay=localStorage.getItem("omeclaw_last_day")||"";
 
-function rememberRecent(list,text){
-  list.push({text,time:Date.now()});
-  while(list.length>20)list.shift();
-}
-function isRecentLocalEcho(list,text,windowMs=15000){
-  const now=Date.now();
-  return list.some(x=>x.text===text&&(now-x.time)<windowMs);
-}
-function markSeen(id){
-  if(!id)return;
-  seenMsgIds.add(id);
-  if(seenMsgIds.size>800){
-    const arr=[...seenMsgIds];
-    for(let i=0;i<300;i++)seenMsgIds.delete(arr[i]);
-  }
-}
+function markSeen(id){if(!id)return;seenMsgIds.add(id);if(seenMsgIds.size>1200){const a=[...seenMsgIds];for(let i=0;i<400;i++)seenMsgIds.delete(a[i]);}}
 
 // ─── UTILS ───
 function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
@@ -35,15 +22,29 @@ function formatMsg(text){
   return s;
 }
 function timeFmt(t){return new Date(typeof t==="number"&&t<1e12?t*1000:t).toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false})}
+function todayKey(){return new Date().toISOString().slice(0,10);}
+
+// ─── STREAK ───
+function updateStreak(){
+  const today=todayKey();
+  if(lastActiveDay===today)return;
+  const yesterday=new Date(Date.now()-86400000).toISOString().slice(0,10);
+  if(lastActiveDay===yesterday){streakDays++;showToast(`🔥 连续第 ${streakDays} 天！`,"info");}
+  else if(lastActiveDay&&lastActiveDay!==today){streakDays=1;}
+  else{streakDays=1;}
+  lastActiveDay=today;
+  localStorage.setItem("omeclaw_streak",String(streakDays));
+  localStorage.setItem("omeclaw_last_day",today);
+}
 
 // ─── NAVIGATION ───
 function switchView(name){
   $$(".nav-btn").forEach(x=>x.classList.remove("active"));
   $$(`.nav-btn[data-view="${name}"]`).forEach(x=>x.classList.add("active"));
-  $$(".view").forEach(v=>v.classList.remove("active"));$(`#view-${name}`).classList.add("active");
+  $$(".view").forEach(v=>v.classList.remove("active"));
+  const view=$(`#view-${name}`);if(view)view.classList.add("active");
   localStorage.setItem("omeclaw_view",name);
-  if(name==="chat")loadChatHistory();
-  if(name==="chat"){unreadChats=0;renderUnreadBadge();}
+  if(name==="chat"){loadChatHistory();unreadChats=0;renderUnreadBadge();}
   if(name==="activity")loadActivity();
   if(name==="status")loadStatus();
   if(name==="agents")loadAgents();
@@ -94,7 +95,8 @@ function renderAgentsGrid(){
     const st=agentStateById[a.id]||{};
     const status=st.status==="running"?"运行中":"待命";
     const aliveCls=st.status==="running"?"alive":"idle";
-    return `<div class="card">
+    const preview=st.lastTaskPreview?esc(st.lastTaskPreview.slice(0,60)):"";
+    return `<div class="card agent-card">
     <div class="card-header"><h3>${esc(a.name)}</h3><span class="tag role">${a.role}</span></div>
     <div class="agent-live ${aliveCls}">
       <span class="live-dot"></span>
@@ -102,17 +104,16 @@ function renderAgentsGrid(){
       <span class="live-time">${st.lastActiveAt?timeFmt(st.lastActiveAt):"暂无"}</span>
       <span class="live-runs">#${st.totalRuns||0}</span>
     </div>
-    <p>${esc(a.systemPrompt.slice(0,150))}${a.systemPrompt.length>150?"...":""}</p>
+    ${preview?`<div class="agent-preview">"${preview}"</div>`:""}
     <div class="card-tags"><span class="tag model">${esc(a.model)}</span>
     ${(a.tools||[]).map(t=>`<span class="tag tool">${esc(t)}</span>`).join("")}</div>
   </div>`;
   }).join("");
 }
 function setConn(ok){
-  $("#conn-status").textContent=ok?"Connected":"Disconnected";
+  $("#conn-status").textContent=ok?"在线":"离线";
   $("#status-dot").classList.toggle("off",!ok);
 }
-
 function renderUnreadBadge(){
   const btn=document.querySelector(`.nav-btn[data-view="chat"]`);
   if(!btn)return;
@@ -147,22 +148,21 @@ async function loadStatus(){
         <div class="status-val">${d.memory?.messages??0} 条消息</div>
       </div>
       <div class="status-section">
-        <div class="status-section-title">自动化提醒</div>
+        <div class="status-section-title">提醒</div>
         <div class="status-val">${d.reminders?.count??0} 个待触发</div>
       </div>
       <div class="status-section">
         <div class="status-section-title">体验体检</div>
-        <div class="status-val">${audit?`得分 ${audit.score}/${audit.total}`:"体检暂不可用"}</div>
+        <div class="status-val">${audit?`${audit.score}/${audit.total}`:"--"}</div>
         ${audit?.checks?.length?`<div class="status-audit">${audit.checks.map(c=>`<div class="audit-item ${c.ok?"ok":"bad"}"><span>${c.ok?"✅":"⚠️"} ${esc(c.title)}</span><span>${esc(c.detail)}</span></div>`).join("")}</div>`:""}
       </div>
-      <div class="status-section">
-        <div class="status-section-title">智能体一致性</div>
-        <div class="status-val">${consistency?.ok?"✅ 无冲突":"⚠️ 发现配置冲突"}</div>
-        ${consistency&&!consistency.ok?`<div class="status-audit">
-          ${consistency.invalidIds?.length?`<div class="audit-item bad"><span>⚠️ 非法ID</span><span>${esc(consistency.invalidIds.join(", "))}</span></div>`:""}
-          ${consistency.duplicateNames?.length?consistency.duplicateNames.map(x=>`<div class="audit-item bad"><span>⚠️ 重名</span><span>${esc(x.name)} → ${esc(x.ids.join(","))}</span></div>`).join(""):""}
-        </div>`:""}
-      </div>
+      ${consistency&&!consistency.ok?`<div class="status-section">
+        <div class="status-section-title">⚠️ 智能体冲突</div>
+        <div class="status-audit">
+          ${consistency.invalidIds?.length?`<div class="audit-item bad"><span>非法ID</span><span>${esc(consistency.invalidIds.join(", "))}</span></div>`:""}
+          ${consistency.duplicateNames?.length?consistency.duplicateNames.map(x=>`<div class="audit-item bad"><span>重名</span><span>${esc(x.name)} → ${esc(x.ids.join(","))}</span></div>`).join(""):""}
+        </div>
+      </div>`:""}
       <div class="status-section">
         <div class="status-section-title">工具</div>
         <div class="status-tools">${(d.tools||[]).map(t=>`<span class="tool-tag">${esc(t)}</span>`).join("")}</div>
@@ -172,8 +172,7 @@ async function loadStatus(){
 async function loadEvolution(){
   try{
     const d=await(await fetch("/api/evolution")).json();
-    const el=$("#evolution-list");
-    if(!el)return;
+    const el=$("#evolution-list");if(!el)return;
     const events=d.events||[];
     if(!events.length){el.innerHTML=`<p class="empty-msg">暂无进化记录</p>`;return;}
     el.innerHTML=events.map(e=>`<div class="evolution-item"><span class="ev-emoji">${e.emoji||"✨"}</span><span class="ev-time">${timeFmt(e.time)}</span><span class="ev-detail">${esc(e.detail)}</span></div>`).join("");
@@ -194,26 +193,15 @@ async function loadActivity(){
   const el=$("#activity-log");
   try{
     const data=await(await fetch("/api/activity")).json();
-    const items=data.timeline||[];
+    const items=(data.timeline||[]).slice(-200);
     if(!items.length){el.innerHTML=`<p class="empty-msg">暂无日志</p>`;return;}
-    const groups={};
-    for(const it of items){
-      const k=it.thread||`${it.source||"system"}:${it.agent||"unknown"}`;
-      if(!groups[k])groups[k]=[];
-      groups[k].push(it);
-    }
-    const ordered=Object.entries(groups).sort((a,b)=>(a[1][a[1].length-1].time||0)-(b[1][b[1].length-1].time||0));
     let html="";
-    for(const [thread,logs] of ordered){
-      html+=`<div class="tl-thread"><div class="tl-thread-title">🧵 ${esc(thread)}</div>`;
-      for(const it of logs){
-        const t=timeFmt(it.time);
-        const meta=LOG_META[it.type]||LOG_META.system;
-        const src=it.source?`<span class="tl-src tl-src-${esc(it.source)}">${esc(it.source)}</span>`:"";
-        const detail=esc(it.detail).slice(0,500);
-        html+=`<div class="tl-row ${meta.cls}"><span class="tl-icon">${meta.icon}</span><span class="tl-time">${t}</span><span class="tl-label">${meta.label}</span>${src}<span class="tl-detail">${detail}</span></div>`;
-      }
-      html+=`</div>`;
+    for(const it of items){
+      const t=timeFmt(it.time);
+      const meta=LOG_META[it.type]||LOG_META.system;
+      const src=it.source?`<span class="tl-src tl-src-${esc(it.source)}">${esc(it.source)}</span>`:"";
+      const detail=esc(it.detail).slice(0,500);
+      html+=`<div class="tl-row ${meta.cls}"><span class="tl-icon">${meta.icon}</span><span class="tl-time">${t}</span><span class="tl-label">${meta.label}</span>${src}<span class="tl-detail">${detail}</span></div>`;
     }
     el.innerHTML=html;
     el.scrollTop=el.scrollHeight;
@@ -221,8 +209,11 @@ async function loadActivity(){
 }
 
 // ─── CHAT ───
-function addMsg(role,html){
+function addMsg(role,html,msgId){
+  if(msgId&&seenMsgIds.has(msgId))return null;
+  if(msgId)markSeen(msgId);
   const d=document.createElement("div");d.className=`msg ${role}`;
+  if(msgId)d.dataset.msgId=String(msgId);
   d.innerHTML=html;
   const container=$("#messages");
   container.appendChild(d);
@@ -239,68 +230,63 @@ async function loadChatHistory(){
     const {messages}=await resp.json();
     const container=$("#messages");
     seenMsgIds.clear();
+    chatFullyLoaded=false;
     if(!messages||!messages.length){
-      if(!container.children.length||container.querySelector(".welcome-msg")){
-        container.innerHTML=`<div class="welcome-msg">
-          <div class="welcome-icon">🪼</div>
-          <h3>嘿 👋</h3>
-          <p>我还没名字呢，你给我起一个？<br>然后跟我聊聊你，让我知道我是谁的分身。</p>
-          <div class="welcome-tips">
-            <span data-text="以后叫你小O吧">给你起个名字</span>
-            <span data-text="叫我老板就行">告诉我怎么叫你</span>
-            <span data-text="最近工作太累了">随便聊聊</span>
-          </div>
-        </div>`;
-      }
+      container.innerHTML=`<div class="welcome-msg">
+        <div class="welcome-icon">🪼</div>
+        <h3>嘿 👋</h3>
+        <p>我还没名字呢，你给我起一个？<br>然后跟我聊聊你，让我知道我是谁的分身。</p>
+        <div class="welcome-tips">
+          <span data-text="以后叫你小O吧">给你起个名字</span>
+          <span data-text="叫我老板就行">告诉我怎么叫你</span>
+          <span data-text="最近工作太累了">随便聊聊</span>
+        </div>
+      </div>`;
+      lastMsgId=0;
+      chatFullyLoaded=true;
       return;
     }
     let html="";
+    let maxId=0;
     for(const m of messages){
-      if(m.id)markSeen(m.id);
+      const mid=m.id||0;
+      if(mid)markSeen(mid);
+      if(mid>maxId)maxId=mid;
       const agent=m.agent_id||"";
-      if(m.role==="user") html+=`<div class="msg user">${esc(m.content)}</div>`;
-      else html+=`<div class="msg assistant">${agent?`<span class="agent-tag">${esc(agent)}</span>`:""}${formatMsg(m.content)}</div>`;
+      if(m.role==="user") html+=`<div class="msg user" data-msg-id="${mid}">${esc(m.content)}</div>`;
+      else html+=`<div class="msg assistant" data-msg-id="${mid}">${agent?`<span class="agent-tag">${esc(agent)}</span>`:""}${formatMsg(m.content)}</div>`;
     }
     container.innerHTML=html;
     container.scrollTop=container.scrollHeight;
-    // 记录最新 ID 用于轮询
-    if(messages.length) lastMsgId=messages[messages.length-1].id||0;
+    lastMsgId=maxId;
+    chatFullyLoaded=true;
   }catch(e){console.error("loadChatHistory:",e);}
 }
 
-// ─── 消息轮询：飞书消息实时同步 ───
+// ─── 消息轮询 ───
 async function pollNewMessages(){
+  if(!chatFullyLoaded)return;
   try{
     const resp=await fetch(`/api/chat/poll?since=${lastMsgId}`);
     const data=await resp.json();
     if(!data.messages?.length)return;
     const chatActive=!!document.querySelector("#view-chat.active");
     const container=$("#messages");
-    // 移除欢迎页
     const welcome=container.querySelector(".welcome-msg");
     if(welcome&&chatActive)welcome.remove();
-    let appended=0,received=0;
+    let newCount=0;
     for(const m of data.messages){
       if(m.id&&seenMsgIds.has(m.id))continue;
-      if(m.id)markSeen(m.id);
-      received++;
-      if(m.role==="user"){
-        if(isRecentLocalEcho(recentLocalUserMessages,m.content))continue;
-        if(chatActive){addMsg("user",esc(m.content));appended++;}
+      newCount++;
+      if(chatActive){
+        if(m.role==="user") addMsg("user",esc(m.content),m.id);
+        else addMsg("assistant",`${m.agent_id?`<span class="agent-tag">${esc(m.agent_id)}</span>`:""}${formatMsg(m.content)}`,m.id);
       }else{
-        if(isRecentLocalEcho(recentLocalAssistantMessages,m.content))continue;
-        if(chatActive){addMsg("assistant",`${m.agent_id?`<span class="agent-tag">${esc(m.agent_id)}</span>`:""}${formatMsg(m.content)}`);appended++;}
+        if(m.id)markSeen(m.id);
       }
     }
-    lastMsgId=data.latestId||lastMsgId;
-    if(!chatActive&&received>0){
-      unreadChats+=received;
-      renderUnreadBadge();
-    }
-    if(chatActive&&data.messages.length){
-      loadAgents();
-      loadBond();
-    }
+    if(data.latestId)lastMsgId=data.latestId;
+    if(!chatActive&&newCount>0){unreadChats+=newCount;renderUnreadBadge();}
   }catch{}
 }
 setInterval(pollNewMessages,3000);
@@ -311,32 +297,33 @@ $("#chat-form").addEventListener("submit",e=>{
   const inp=$("#chat-input"),text=inp.value.trim();
   if(!text)return;
   inp.value="";inp.focus();
+  updateStreak();
 
   const welcome=$("#messages .welcome-msg");
   if(welcome)welcome.remove();
 
   const agentName=agents.find(a=>a.id===curAgent)?.name??curAgent;
   addMsg("user",esc(text));
-  rememberRecent(recentLocalUserMessages,text);
   const ld=addMsg("assistant",thinkingHtml(agentName));
-  ld.classList.add("loading");
+  if(ld)ld.classList.add("loading");
   pendingChats++;updatePending();
 
   fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({message:text,sessionId:CHAT_SESSION,agentId:curAgent})})
   .then(r=>r.json())
   .then(data=>{
+    if(!ld)return;
     if(data.error){
       ld.innerHTML=`<span class="agent-tag error-tag">Error</span>${esc(data.error)}`;
       ld.classList.add("error");
     }else{
       ld.innerHTML=`<span class="agent-tag">${esc(data.agentId)}</span>${formatMsg(data.reply??"No response")}`;
-      rememberRecent(recentLocalAssistantMessages,data.reply??"");
     }
     ld.classList.remove("loading");
     $("#messages").scrollTop=$("#messages").scrollHeight;
   })
   .catch(err=>{
+    if(!ld)return;
     ld.innerHTML=`<span class="agent-tag error-tag">Error</span>${esc(err.message)}`;
     ld.classList.remove("loading");ld.classList.add("error");
   })
@@ -360,7 +347,7 @@ $("#confirm-create").addEventListener("click",async()=>{
     const r=await(await fetch("/api/agents",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json();
     if(r.ok){
       $("#create-modal").style.display="none";
-      showToast(`Agent "${body.name}" 创建成功`,"success");
+      showToast(`🧬 ${body.name} 已唤醒`,"success");
       await loadAgents();
       $("#new-id").value="";$("#new-name").value="";$("#new-prompt").value="";$("#new-tools").value="";
     }else showToast(r.error||"创建失败","error");
@@ -456,23 +443,22 @@ function showToast(msg,type="info"){
   setTimeout(()=>{t.classList.remove("show");setTimeout(()=>t.remove(),300);},3000);
 }
 
-// ─── 60秒引导式人格测试 ───
+// ─── ONBOARDING ───
 const ONBOARDING_KEY="omeclaw_onboarding_done_v1";
 const onboardingSteps=[
   {key:"call_user",title:"我该怎么称呼你？",placeholder:"例如：爸爸、老板、小王…",hint:"这个称呼会立刻用于后续对话。"},
-  {key:"relationship",title:"你希望我是什么关系？",placeholder:"例如：分身、伴侣、搭子、影子…",hint:"你定义关系，我就按这个关系和你说话。"},
+  {key:"relationship",title:"你希望我们是什么关系？",placeholder:"例如：分身、伴侣、搭子、影子…",hint:"你定义关系，我就按这个关系和你相处。"},
   {key:"mbti",title:"你的MBTI是？（可跳过）",placeholder:"例如：INTJ",hint:"会写入人格层记忆，影响后续风格。"},
 ];
 let onboardingIdx=0,onboardingFacts={};
-
 function renderOnboarding(){
   const modal=$("#onboarding-modal"),stepEl=$("#onboarding-step"),bar=$("#onboarding-progress");
   if(!modal||!stepEl||!bar)return;
   const s=onboardingSteps[onboardingIdx];
-  bar.style.width=`${Math.round((onboardingIdx/onboardingSteps.length)*100)}%`;
-  stepEl.innerHTML=`<div class="onboarding-step"><h3>${esc(s.title)}</h3><p>${esc(s.hint)}</p><input class="onboarding-input" id="onboarding-input" placeholder="${esc(s.placeholder)}"></div>`;
+  bar.style.width=`${Math.round(((onboardingIdx+1)/onboardingSteps.length)*100)}%`;
+  stepEl.innerHTML=`<div class="onboarding-step"><h3>${esc(s.title)}</h3><p>${esc(s.hint)}</p><input class="onboarding-input" id="onboarding-input" placeholder="${esc(s.placeholder)}" autofocus></div>`;
   const input=$("#onboarding-input");
-  if(input)input.value=onboardingFacts[s.key]||"";
+  if(input){input.value=onboardingFacts[s.key]||"";input.addEventListener("keypress",e=>{if(e.key==="Enter"){e.preventDefault();$("#onboarding-next")?.click();}});}
 }
 async function finishOnboarding(skip=false){
   const modal=$("#onboarding-modal");
@@ -484,6 +470,8 @@ async function finishOnboarding(skip=false){
   if(onboardingFacts.relationship)snippets.push(`你是我的${onboardingFacts.relationship}`);
   if(onboardingFacts.mbti)snippets.push(`我的MBTI是${onboardingFacts.mbti}`);
   if(!snippets.length)return;
+  switchView("chat");
+  await new Promise(r=>setTimeout(r,200));
   $("#chat-input").value=snippets.join("，");
   $("#chat-form").requestSubmit();
 }
@@ -497,24 +485,27 @@ $("#onboarding-next")?.addEventListener("click",()=>{
 });
 $("#onboarding-skip")?.addEventListener("click",()=>finishOnboarding(true));
 
-// ─── MEMORY UPDATE + ACHIEVEMENTS ───
-let lastFactCount=0;
+// ─── ACHIEVEMENTS ───
 const ACHIEVEMENTS=[
   {id:"first_memory",name:"初次记忆",desc:"第一条记忆写入",threshold:1,emoji:"🌱",xp:10},
   {id:"five_facts",name:"初识",desc:"记住5件事",threshold:5,emoji:"🪼",xp:30},
   {id:"ten_facts",name:"渐熟",desc:"记住10件事",threshold:10,emoji:"💙",xp:50},
   {id:"twenty_facts",name:"知己",desc:"记住20件事",threshold:20,emoji:"💎",xp:100},
+  {id:"thirty_facts",name:"老朋友",desc:"记住30件事",threshold:30,emoji:"🔥",xp:150},
   {id:"fifty_facts",name:"灵魂伴侣",desc:"记住50件事",threshold:50,emoji:"🌊",xp:200},
+  {id:"streak3",name:"三日连击",desc:"连续3天聊天",threshold:-3,emoji:"🔥",xp:30},
+  {id:"streak7",name:"周连击",desc:"连续7天聊天",threshold:-7,emoji:"⚡",xp:80},
+  {id:"streak30",name:"月连击",desc:"连续30天聊天",threshold:-30,emoji:"👑",xp:300},
 ];
 let unlockedAchievements=JSON.parse(localStorage.getItem("omeclaw_achievements")||"[]");
 
 function checkAchievements(count){
   for(const a of ACHIEVEMENTS){
-    if(count>=a.threshold&&!unlockedAchievements.includes(a.id)){
-      unlockedAchievements.push(a.id);
-      localStorage.setItem("omeclaw_achievements",JSON.stringify(unlockedAchievements));
-      showAchievement(a);
-    }
+    if(unlockedAchievements.includes(a.id))continue;
+    let met=false;
+    if(a.threshold>0)met=count>=a.threshold;
+    else met=streakDays>=Math.abs(a.threshold);
+    if(met){unlockedAchievements.push(a.id);localStorage.setItem("omeclaw_achievements",JSON.stringify(unlockedAchievements));showAchievement(a);}
   }
 }
 
@@ -529,7 +520,7 @@ function showAchievement(a){
   setTimeout(()=>{el.classList.remove("mt-show");setTimeout(()=>el.remove(),500);},5000);
 }
 
-function showMemoryToast(diff){
+function showMemoryToast(){
   const container=document.getElementById("memory-toast-container");
   if(!container)return;
   const messages=[
@@ -551,10 +542,7 @@ async function checkMemoryUpdate(){
   try{
     const d=await(await fetch("/api/bond")).json();
     const count=d.factCount||0;
-    if(lastFactCount>0&&count>lastFactCount){
-      showMemoryToast(count-lastFactCount);
-      checkAchievements(count);
-    }
+    if(lastFactCount>0&&count>lastFactCount){showMemoryToast();checkAchievements(count);}
     lastFactCount=count;
   }catch{}
 }
@@ -590,7 +578,8 @@ async function loadBond(){
     if(nameEl)nameEl.textContent=d.myName||"还没名字";
     if(emojiEl)emojiEl.textContent=d.emoji||"🫧";
     const next=d.nextMilestone?` → ${d.nextMilestone.emoji} ${d.nextMilestone.name}`:"";
-    if(levelEl)levelEl.innerHTML=`<span class="bond-level-text">${d.level}</span><span class="bond-stats">${d.factCount}条 · ${d.xp||0}XP · ${d.completeness||0}%</span>${next?"<span class=\"bond-next\">"+next+"</span>":""}`;
+    const streakText=streakDays>1?` · 🔥${streakDays}天`:"";
+    if(levelEl)levelEl.innerHTML=`<span class="bond-level-text">${d.level}</span><span class="bond-stats">${d.factCount}条 · ${d.xp||0}XP · ${d.completeness||0}%${streakText}</span>${next?"<span class=\"bond-next\">"+next+"</span>":""}`;
     if(progressEl){
       const pct=d.progressToNext??0;
       progressEl.innerHTML=`<div class="bond-progress-bar"><div class="bond-progress-fill" style="width:${pct}%"></div></div>`;

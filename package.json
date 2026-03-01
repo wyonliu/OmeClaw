@@ -1,7 +1,7 @@
 {
   "name": "omeclaw",
-  "version": "0.4.0",
-  "description": "Agent Operating System — multi-agent, any model, infinite memory, pluggable gateways",
+  "version": "0.5.0",
+  "description": "养一只属于你的数字分身 — 11层人本记忆 · 养成系统 · 多端同步 · 开源可控",
   "type": "module",
   "bin": { "omeclaw": "./dist/cli.js" },
   "scripts": { "dev": "tsx src/cli.ts", "build": "tsc", "start": "node dist/cli.js" },
