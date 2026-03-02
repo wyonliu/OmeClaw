@@ -906,3 +906,193 @@ if (document.readyState === "loading") {
 } else {
   init();
 }
+
+// ========== 终身记忆系统 ==========
+
+// 记忆搜索
+async function searchMemory(query) {
+  try {
+    const res = await fetch(`/api/memory/search?q=${encodeURIComponent(query)}&sessionId=${OWNER_SESSION}&limit=100`);
+    const data = await res.json();
+    return data.results;
+  } catch (e) {
+    console.error("搜索记忆失败:", e);
+    return [];
+  }
+}
+
+// 显示记忆搜索界面
+function showMemorySearch() {
+  const modal = document.createElement("div");
+  modal.className = "modal active";
+  modal.innerHTML = `
+    <div class="modal-content" style="max-width:800px">
+      <button class="modal-close" onclick="this.parentElement.parentElement.remove()">×</button>
+      <h2 style="margin-bottom:20px">🔍 记忆搜索</h2>
+      
+      <div style="margin-bottom:20px">
+        <input type="text" id="memory-search-input" placeholder="搜索记忆..." 
+               style="width:100%;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:12px;color:var(--text);font-size:15px">
+      </div>
+      
+      <div id="memory-search-results" style="max-height:400px;overflow-y:auto"></div>
+      
+      <div style="margin-top:20px;display:flex;gap:12px">
+        <button onclick="exportMemory('json')" style="flex:1;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--text);cursor:pointer">
+          导出JSON
+        </button>
+        <button onclick="exportMemory('markdown')" style="flex:1;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--text);cursor:pointer">
+          导出Markdown
+        </button>
+        <button onclick="showMemoryTimeline()" style="flex:1;padding:12px;background:var(--accent);border:none;border-radius:12px;color:white;cursor:pointer">
+          时光机
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  
+  const input = document.getElementById("memory-search-input");
+  input.focus();
+  
+  let searchTimeout;
+  input.addEventListener("input", () => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(async () => {
+      const results = await searchMemory(input.value);
+      renderMemorySearchResults(results);
+    }, 300);
+  });
+  
+  // 初始加载
+  searchMemory("").then(renderMemorySearchResults);
+}
+
+function renderMemorySearchResults(results) {
+  const container = document.getElementById("memory-search-results");
+  if (!container) return;
+  
+  if (results.length === 0) {
+    container.innerHTML = `
+      <div style="text-align:center;padding:40px;color:var(--text2)">
+        <div style="font-size:48px;margin-bottom:12px">🔍</div>
+        <div>没有找到记忆</div>
+      </div>
+    `;
+    return;
+  }
+  
+  container.innerHTML = results.map(m => `
+    <div style="padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+        <span style="padding:4px 8px;background:var(--accent-bg);color:var(--accent);border-radius:6px;font-size:12px">
+          ${m.type}
+        </span>
+        <span style="font-size:12px;color:var(--text2)">
+          ${new Date(m.timestamp).toLocaleString()}
+        </span>
+        <span style="margin-left:auto;font-size:12px;color:var(--text2)">
+          重要性: ${"⭐".repeat(Math.min(m.importance, 5))}
+        </span>
+      </div>
+      <div style="margin-bottom:8px">${m.content}</div>
+      ${m.tags.length > 0 ? `
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${m.tags.map(tag => `
+            <span style="padding:2px 8px;background:var(--surface2);border-radius:12px;font-size:11px;color:var(--text2)">
+              #${tag}
+            </span>
+          `).join("")}
+        </div>
+      ` : ""}
+    </div>
+  `).join("");
+}
+
+// 记忆时光机
+async function showMemoryTimeline() {
+  try {
+    const res = await fetch(`/api/memory/timeline?sessionId=${OWNER_SESSION}&groupBy=day`);
+    const data = await res.json();
+    
+    const modal = document.createElement("div");
+    modal.className = "modal active";
+    modal.innerHTML = `
+      <div class="modal-content" style="max-width:900px">
+        <button class="modal-close" onclick="this.parentElement.parentElement.remove()">×</button>
+        <h2 style="margin-bottom:20px">⏰ 记忆时光机</h2>
+        
+        <div id="memory-timeline" style="max-height:500px;overflow-y:auto"></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    
+    const timeline = document.getElementById("memory-timeline");
+    const entries = Object.entries(data.timeline).sort((a, b) => b[0].localeCompare(a[0]));
+    
+    timeline.innerHTML = entries.map(([date, memories]) => `
+      <div style="margin-bottom:32px">
+        <h3 style="position:sticky;top:0;background:var(--surface);padding:12px;border-radius:12px;margin-bottom:12px">
+          📅 ${date}
+        </h3>
+        <div style="padding-left:20px;border-left:2px solid var(--border)">
+          ${memories.map(m => `
+            <div style="position:relative;padding:12px;background:var(--surface2);border-radius:12px;margin-bottom:12px;margin-left:20px">
+              <div style="position:absolute;left:-26px;top:16px;width:12px;height:12px;background:var(--accent);border-radius:50%;border:2px solid var(--surface)"></div>
+              <div style="font-size:12px;color:var(--text2);margin-bottom:4px">
+                ${new Date(m.timestamp).toLocaleTimeString()}
+              </div>
+              <div>${m.content}</div>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `).join("");
+  } catch (e) {
+    console.error("加载时光机失败:", e);
+  }
+}
+
+// 导出记忆
+async function exportMemory(format) {
+  try {
+    const res = await fetch(`/api/memory/export?sessionId=${OWNER_SESSION}&format=${format}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `memory-export.${format}`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`记忆已导出为${format.toUpperCase()}`, "success");
+  } catch (e) {
+    console.error("导出失败:", e);
+    showToast("导出失败", "error");
+  }
+}
+
+// 在"我的"页面添加记忆搜索按钮
+function addMemorySearchButton() {
+  const profileView = document.getElementById("view-profile");
+  if (!profileView) return;
+  
+  const existingBtn = document.getElementById("memory-search-btn");
+  if (existingBtn) return;
+  
+  const btn = document.createElement("button");
+  btn.id = "memory-search-btn";
+  btn.className = "profile-action-btn";
+  btn.innerHTML = "🔍 记忆搜索";
+  btn.style.cssText = "width:100%;padding:16px;background:linear-gradient(135deg,var(--accent),var(--blue));border:none;border-radius:12px;color:white;font-size:16px;font-weight:600;cursor:pointer;margin-bottom:12px";
+  btn.onclick = showMemorySearch;
+  
+  const agentManageBtn = document.querySelector('[onclick="showView(\'agents\')"]');
+  if (agentManageBtn && agentManageBtn.parentElement) {
+    agentManageBtn.parentElement.insertBefore(btn, agentManageBtn);
+  }
+}
+
+// 初始化
+setTimeout(addMemorySearchButton, 1000);
+
+console.log("✅ 终身记忆系统前端已加载");
