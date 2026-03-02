@@ -9,6 +9,8 @@ import { initGamification, addXP, trackMessage, trackFact, trackToolUse, getProg
 import { initVectorMemory, addVectorMemory, searchVectorMemory, getVectorMemoryStats, importExistingMemories } from "./vector.js";
 import { handleWebSocketUpgrade, pushEvent, getWSStats } from "./websocket.js";
 import { initOmeLand, upsertAgentProfile, createPost, followAgent, likePost, getFeed, getAgentProfile, getAllAgents, getAgentPosts, matchAgents, getOmeLandStats } from "./omeland.js";
+import { initUserSystem, registerUser, loginUser, verifyToken, logoutUser, getUserInfo, updateUserProfile, getAllUsers, getUserStats } from "./user.js";
+import { adoptOme, getOmeTemplates, quickAdoptOme, customizeOme } from "./adoption.js";
 import { bus } from "./bus.js";
 import { listTools } from "./tools.js";
 import { createLarkAdapter } from "./gateway/lark.js";
@@ -64,6 +66,7 @@ export function startServer(config: Config, port: number, configPath?: string) {
   initGamification(dataDir);
   initVectorMemory(dataDir);
   initOmeLand(dataDir);
+  initUserSystem(dataDir);
   initAgentBus(config);
   
   // 导入现有记忆到向量系统
@@ -615,6 +618,141 @@ export function startServer(config: Config, port: number, configPath?: string) {
 
     if (url === "/api/omeland/stats" && method === "GET") {
       return json(res, getOmeLandStats());
+    }
+
+    // 用户系统 API
+    if (url === "/api/auth/register" && method === "POST") {
+      try {
+        const body = JSON.parse(await collectBody(req));
+        const { username, password, email, displayName } = body;
+        if (!username || !password) return json(res, { error: "username and password required" }, 400);
+        
+        const result = registerUser(username, password, { email, displayName });
+        if (!result.ok) return json(res, { error: result.error }, 400);
+        
+        // 自动创建 Ome
+        const omeResult = quickAdoptOme(config, result.userId!, `ome_${result.userId}`, username);
+        
+        logActivity("system", "auth", `👤 新用户注册: ${username}`);
+        return json(res, { ok: true, userId: result.userId, ome: omeResult.ome });
+      } catch (e: any) {
+        return json(res, { error: e.message }, 500);
+      }
+    }
+
+    if (url === "/api/auth/login" && method === "POST") {
+      try {
+        const body = JSON.parse(await collectBody(req));
+        const { username, password } = body;
+        if (!username || !password) return json(res, { error: "username and password required" }, 400);
+        
+        const result = loginUser(username, password);
+        if (!result.ok) return json(res, { error: result.error }, 401);
+        
+        logActivity("system", "auth", `🔑 用户登录: ${username}`);
+        return json(res, { ok: true, token: result.token, userId: result.userId, omeId: result.omeId });
+      } catch (e: any) {
+        return json(res, { error: e.message }, 500);
+      }
+    }
+
+    if (url === "/api/auth/logout" && method === "POST") {
+      try {
+        const token = req.headers.authorization?.replace("Bearer ", "");
+        if (!token) return json(res, { error: "token required" }, 401);
+        
+        const success = logoutUser(token);
+        return json(res, { ok: success });
+      } catch (e: any) {
+        return json(res, { error: e.message }, 500);
+      }
+    }
+
+    if (url === "/api/auth/verify" && method === "GET") {
+      try {
+        const token = req.headers.authorization?.replace("Bearer ", "");
+        if (!token) return json(res, { error: "token required" }, 401);
+        
+        const result = verifyToken(token);
+        if (!result.ok) return json(res, { error: result.error }, 401);
+        
+        const userInfo = getUserInfo(result.userId!);
+        return json(res, { ok: true, user: userInfo, omeId: result.omeId });
+      } catch (e: any) {
+        return json(res, { error: e.message }, 500);
+      }
+    }
+
+    if (url === "/api/auth/profile" && method === "PUT") {
+      try {
+        const token = req.headers.authorization?.replace("Bearer ", "");
+        if (!token) return json(res, { error: "token required" }, 401);
+        
+        const auth = verifyToken(token);
+        if (!auth.ok) return json(res, { error: auth.error }, 401);
+        
+        const body = JSON.parse(await collectBody(req));
+        const success = updateUserProfile(auth.userId!, body);
+        return json(res, { ok: success });
+      } catch (e: any) {
+        return json(res, { error: e.message }, 500);
+      }
+    }
+
+    if (url === "/api/users" && method === "GET") {
+      return json(res, { users: getAllUsers() });
+    }
+
+    if (url === "/api/users/stats" && method === "GET") {
+      return json(res, getUserStats());
+    }
+
+    // Ome 领养系统 API
+    if (url === "/api/ome/templates" && method === "GET") {
+      return json(res, { templates: getOmeTemplates() });
+    }
+
+    if (url === "/api/ome/adopt" && method === "POST") {
+      try {
+        const token = req.headers.authorization?.replace("Bearer ", "");
+        if (!token) return json(res, { error: "token required" }, 401);
+        
+        const auth = verifyToken(token);
+        if (!auth.ok) return json(res, { error: auth.error }, 401);
+        
+        const body = JSON.parse(await collectBody(req));
+        const { templateId, customName, customAvatar, personality } = body;
+        
+        const result = adoptOme(config, auth.userId!, auth.omeId!, {
+          templateId,
+          customName,
+          customAvatar,
+          personality,
+        });
+        
+        if (!result.ok) return json(res, { error: result.error }, 400);
+        
+        logActivity("system", "adoption", `🪼 Ome 领养: ${result.ome.name}`);
+        return json(res, { ok: true, ome: result.ome });
+      } catch (e: any) {
+        return json(res, { error: e.message }, 500);
+      }
+    }
+
+    if (url === "/api/ome/customize" && method === "PUT") {
+      try {
+        const token = req.headers.authorization?.replace("Bearer ", "");
+        if (!token) return json(res, { error: "token required" }, 401);
+        
+        const auth = verifyToken(token);
+        if (!auth.ok) return json(res, { error: auth.error }, 401);
+        
+        const body = JSON.parse(await collectBody(req));
+        const success = customizeOme(auth.omeId!, body);
+        return json(res, { ok: success });
+      } catch (e: any) {
+        return json(res, { error: e.message }, 500);
+      }
     }
 
     // 60秒魔法引导系统
