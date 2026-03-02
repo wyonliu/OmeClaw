@@ -1,0 +1,446 @@
+/* 60秒魔法引导系统样式 */
+
+.onboarding-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.3s ease;
+}
+
+.onboarding-overlay.fade-out {
+  animation: fadeOut 0.5s ease forwards;
+}
+
+.onboarding-container {
+  width: 90%;
+  max-width: 600px;
+  background: rgba(255, 255, 255, 0.98);
+  border-radius: 24px;
+  padding: 40px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  position: relative;
+}
+
+.onboarding-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 24px 24px 0 0;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  transition: width 0.3s ease;
+  width: 0%;
+}
+
+.progress-time {
+  position: absolute;
+  top: 16px;
+  right: 40px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #667eea;
+  background: rgba(102, 126, 234, 0.1);
+  padding: 4px 12px;
+  border-radius: 12px;
+}
+
+.onboarding-content {
+  margin-top: 20px;
+  min-height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 步骤通用样式 */
+.step-welcome,
+.step-form,
+.step-complete {
+  text-align: center;
+  width: 100%;
+}
+
+.animate-in {
+  animation: slideUp 0.4s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 欢迎步骤 */
+.welcome-emoji {
+  font-size: 80px;
+  margin-bottom: 20px;
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.step-welcome h2 {
+  font-size: 32px;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 12px;
+}
+
+.step-welcome p {
+  font-size: 18px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.welcome-subtitle {
+  font-size: 16px !important;
+  color: #999 !important;
+  margin-bottom: 32px !important;
+}
+
+/* 表单步骤 */
+.step-icon {
+  font-size: 60px;
+  margin-bottom: 16px;
+}
+
+.step-form h3 {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 8px;
+}
+
+.step-hint {
+  font-size: 14px;
+  color: #999;
+  margin-bottom: 24px;
+}
+
+.input-large {
+  width: 100%;
+  padding: 16px 20px;
+  font-size: 18px;
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  margin-bottom: 16px;
+  transition: all 0.3s ease;
+  font-family: inherit;
+}
+
+.input-large:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+}
+
+/* 快速选项 */
+.quick-options {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  justify-content: center;
+}
+
+.btn-quick {
+  padding: 8px 16px;
+  font-size: 14px;
+  background: #f5f5f5;
+  border: none;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #666;
+}
+
+.btn-quick:hover {
+  background: #667eea;
+  color: white;
+  transform: translateY(-2px);
+}
+
+/* 标签网格 */
+.tag-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 32px;
+}
+
+.tag-btn {
+  padding: 16px 12px;
+  font-size: 16px;
+  background: #f8f8f8;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #333;
+  font-weight: 500;
+}
+
+.tag-btn:hover {
+  background: #f0f0f0;
+  transform: translateY(-2px);
+}
+
+.tag-btn.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-color: #667eea;
+  transform: scale(1.05);
+}
+
+/* 关系卡片 */
+.relationship-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.relationship-card {
+  padding: 24px 16px;
+  background: #f8f8f8;
+  border: 3px solid transparent;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: center;
+}
+
+.relationship-card:hover {
+  background: #f0f0f0;
+  transform: translateY(-4px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+}
+
+.relationship-card.active {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  border-color: #667eea;
+  transform: scale(1.05);
+}
+
+.rel-emoji {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.rel-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 8px;
+}
+
+.rel-desc {
+  font-size: 13px;
+  color: #666;
+  line-height: 1.4;
+}
+
+/* 按钮 */
+.btn-primary {
+  padding: 16px 48px;
+  font-size: 18px;
+  font-weight: 600;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  padding: 12px 32px;
+  font-size: 16px;
+  background: #f5f5f5;
+  color: #666;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  margin-left: 12px;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+  background: #e0e0e0;
+}
+
+/* 完成步骤 */
+.step-complete {
+  padding: 40px 0;
+}
+
+.complete-animation {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 32px;
+}
+
+.complete-emoji {
+  font-size: 80px;
+  position: relative;
+  z-index: 2;
+  animation: scaleIn 0.6s ease;
+}
+
+@keyframes scaleIn {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.complete-rings {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 100%;
+}
+
+.complete-rings::before,
+.complete-rings::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border: 3px solid #667eea;
+  border-radius: 50%;
+  animation: ripple 2s ease-out infinite;
+}
+
+.complete-rings::after {
+  animation-delay: 1s;
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0.8);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+.step-complete h2 {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 12px;
+}
+
+.step-complete p {
+  font-size: 16px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.complete-stats {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  padding: 20px;
+  border-radius: 12px;
+  margin: 24px 0;
+  line-height: 1.8;
+  font-size: 15px !important;
+  color: #333 !important;
+}
+
+/* 动画 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .onboarding-container {
+    width: 95%;
+    padding: 24px;
+  }
+
+  .welcome-emoji {
+    font-size: 60px;
+  }
+
+  .step-welcome h2 {
+    font-size: 24px;
+  }
+
+  .step-form h3 {
+    font-size: 20px;
+  }
+
+  .tag-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .relationship-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .btn-primary {
+    padding: 14px 36px;
+    font-size: 16px;
+  }
+}

@@ -1,0 +1,462 @@
+/* ========== 60秒魔法引导样式 ========== */
+
+.onboarding-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, #0a0a0f 0%, #1a1a24 100%);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.onboarding-overlay.fade-out {
+  animation: fadeOut 0.5s ease-out forwards;
+}
+
+.onboarding-container {
+  width: 90%;
+  max-width: 500px;
+  padding: 20px;
+}
+
+/* 进度条 */
+.onboarding-progress {
+  margin-bottom: 40px;
+}
+
+.progress-bar {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #7c6cf0, #4d9fff);
+  border-radius: 2px;
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.progress-text {
+  text-align: center;
+  font-size: 14px;
+  color: var(--text2);
+}
+
+/* 引导步骤容器 */
+.onboarding-step {
+  text-align: center;
+  padding: 20px;
+}
+
+/* 欢迎页 */
+.welcome-emoji {
+  font-size: 80px;
+  margin-bottom: 20px;
+  animation: bounce 1s ease-in-out infinite;
+}
+
+.welcome-title {
+  font-size: 48px;
+  font-weight: 700;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, #7c6cf0, #4d9fff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.welcome-text {
+  font-size: 20px;
+  line-height: 1.8;
+  color: var(--text);
+  margin-bottom: 40px;
+}
+
+.welcome-animation {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  margin: 0 auto;
+}
+
+.pulse-circle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(124, 108, 240, 0.3);
+  animation: pulse 2s ease-out infinite;
+}
+
+.pulse-circle.delay-1 {
+  animation-delay: 0.5s;
+}
+
+.pulse-circle.delay-2 {
+  animation-delay: 1s;
+}
+
+@keyframes pulse {
+  0% {
+    width: 20px;
+    height: 20px;
+    opacity: 1;
+  }
+  100% {
+    width: 100px;
+    height: 100px;
+    opacity: 0;
+  }
+}
+
+/* 步骤通用样式 */
+.step-emoji {
+  font-size: 60px;
+  margin-bottom: 20px;
+}
+
+.step-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.step-subtitle {
+  font-size: 16px;
+  color: var(--text2);
+  margin-bottom: 32px;
+}
+
+/* 输入容器 */
+.name-input-container {
+  margin-bottom: 32px;
+}
+
+.name-input {
+  width: 100%;
+  padding: 16px 20px;
+  font-size: 18px;
+  background: var(--bg2);
+  border: 2px solid transparent;
+  border-radius: 12px;
+  color: var(--text);
+  text-align: center;
+  transition: all 0.3s ease;
+  margin-bottom: 16px;
+}
+
+.name-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: var(--bg3);
+  box-shadow: 0 0 0 4px rgba(124, 108, 240, 0.1);
+}
+
+.name-input::placeholder {
+  color: var(--text3);
+}
+
+/* 建议芯片 */
+.name-suggestions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.suggestion-chip {
+  padding: 8px 16px;
+  background: var(--bg2);
+  border: 1px solid var(--bg3);
+  border-radius: 20px;
+  font-size: 14px;
+  color: var(--text2);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.suggestion-chip:hover {
+  background: var(--bg3);
+  border-color: var(--primary);
+  color: var(--primary);
+  transform: translateY(-2px);
+}
+
+.suggestion-chip:active {
+  transform: translateY(0);
+}
+
+/* 第一次对话 */
+.first-chat-container {
+  margin-bottom: 24px;
+}
+
+.first-message-input {
+  width: 100%;
+  padding: 16px 20px;
+  font-size: 16px;
+  line-height: 1.6;
+  background: var(--bg2);
+  border: 2px solid transparent;
+  border-radius: 12px;
+  color: var(--text);
+  resize: vertical;
+  min-height: 120px;
+  transition: all 0.3s ease;
+  font-family: inherit;
+}
+
+.first-message-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: var(--bg3);
+  box-shadow: 0 0 0 4px rgba(124, 108, 240, 0.1);
+}
+
+.first-message-input::placeholder {
+  color: var(--text3);
+}
+
+.input-tips {
+  margin-top: 12px;
+  text-align: left;
+}
+
+.tip {
+  font-size: 13px;
+  color: var(--text3);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 按钮 */
+.onboarding-btn {
+  width: 100%;
+  padding: 16px 32px;
+  font-size: 18px;
+  font-weight: 600;
+  background: var(--bg3);
+  color: var(--text3);
+  border: none;
+  border-radius: 12px;
+  cursor: not-allowed;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.onboarding-btn.active {
+  background: linear-gradient(135deg, #7c6cf0, #4d9fff);
+  color: white;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(124, 108, 240, 0.3);
+}
+
+.onboarding-btn.active:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(124, 108, 240, 0.4);
+}
+
+.onboarding-btn.active:active {
+  transform: translateY(0);
+}
+
+.onboarding-btn:disabled {
+  cursor: not-allowed;
+}
+
+/* 按钮加载状态 */
+.btn-loading {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 惊喜页面 */
+.surprise-animation {
+  margin-bottom: 32px;
+}
+
+.memory-planet-birth {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.step-title.celebration {
+  font-size: 36px;
+  animation: celebration 0.6s ease-out;
+}
+
+@keyframes celebration {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.memory-stats {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  margin-bottom: 32px;
+}
+
+.stat-item {
+  text-align: center;
+  padding: 16px 24px;
+  background: var(--bg2);
+  border-radius: 12px;
+  border: 1px solid var(--bg3);
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 4px;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text3);
+}
+
+.celebration-btn {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 4px 16px rgba(124, 108, 240, 0.3);
+  }
+  50% {
+    box-shadow: 0 4px 24px rgba(124, 108, 240, 0.6);
+  }
+}
+
+/* 动画 */
+.fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.slide-up {
+  animation: slideUp 0.5s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .onboarding-container {
+    width: 95%;
+    padding: 16px;
+  }
+
+  .welcome-emoji {
+    font-size: 60px;
+  }
+
+  .welcome-title {
+    font-size: 36px;
+  }
+
+  .welcome-text {
+    font-size: 18px;
+  }
+
+  .step-emoji {
+    font-size: 48px;
+  }
+
+  .step-title {
+    font-size: 24px;
+  }
+
+  .step-subtitle {
+    font-size: 14px;
+  }
+
+  .name-input {
+    font-size: 16px;
+    padding: 14px 16px;
+  }
+
+  .first-message-input {
+    font-size: 15px;
+    padding: 14px 16px;
+  }
+
+  .onboarding-btn {
+    font-size: 16px;
+    padding: 14px 24px;
+  }
+
+  .memory-stats {
+    gap: 12px;
+  }
+
+  .stat-item {
+    padding: 12px 16px;
+  }
+
+  .stat-value {
+    font-size: 20px;
+  }
+}

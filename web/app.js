@@ -52,7 +52,11 @@ function switchView(view) {
   
   if (view === "chat") loadChatHistory();
   if (view === "memory") loadMemory();
-  if (view === "grow") loadGrow();
+  if (view === "grow") {
+    loadGrow();
+    loadProgress();
+    loadAchievements();
+  }
 }
 
 $$(".nav-tab").forEach(btn => {
@@ -133,6 +137,11 @@ if (chatForm) {
       } else {
         addMsg("assistant", formatMsg(data.reply || "无回复"));
         if (ttsEnabled && data.reply) speak(data.reply);
+        
+        // 检查是否升级
+        if (data.progress && data.progress.levelUp) {
+          showLevelUpNotification(data.progress.newLevel, data.progress.newLevelName);
+        }
       }
     } catch (err) {
       if (thinkingMsg) thinkingMsg.remove();
@@ -142,6 +151,84 @@ if (chatForm) {
     setTimeout(checkMemoryUpdate, 800);
     setTimeout(loadBond, 1000);
   });
+}
+
+// ========== 游戏化系统 ==========
+async function loadProgress() {
+  try {
+    const resp = await fetch("/api/progress");
+    const progress = await resp.json();
+    
+    // 更新养成页数据
+    const xpEl = $("#bond-xp");
+    const nextEl = $("#bond-next");
+    const fillEl = $("#bond-fill");
+    const levelEl = $("#grow-level");
+    
+    if (xpEl) xpEl.textContent = `${progress.xp} XP`;
+    if (levelEl) levelEl.textContent = `${progress.levelEmoji} ${progress.levelName} Lv.${progress.level}`;
+    if (fillEl) fillEl.style.width = `${progress.progressToNext}%`;
+    if (nextEl && progress.nextLevelName) {
+      nextEl.textContent = `→ ${progress.nextLevelName} (${progress.nextLevelXP} XP)`;
+    }
+    
+    // 更新统计数据
+    const streakEl = $("#streak-num");
+    if (streakEl) streakEl.textContent = progress.stats.streakDays;
+    
+    return progress;
+  } catch (e) {
+    console.error("loadProgress:", e);
+    return null;
+  }
+}
+
+async function loadAchievements() {
+  try {
+    const resp = await fetch("/api/achievements");
+    const { achievements } = await resp.json();
+    
+    const container = $("#achievements-grid");
+    if (!container) return;
+    
+    container.innerHTML = achievements.map(a => `
+      <div class="achievement-card ${a.unlocked ? 'unlocked' : 'locked'}">
+        <div class="achievement-icon">${a.emoji}</div>
+        <div class="achievement-info">
+          <div class="achievement-name">${a.name}</div>
+          <div class="achievement-desc">${a.description}</div>
+          <div class="achievement-xp">+${a.xpReward} XP</div>
+        </div>
+        ${a.unlocked ? '<div class="achievement-badge">✓</div>' : ''}
+      </div>
+    `).join('');
+  } catch (e) {
+    console.error("loadAchievements:", e);
+  }
+}
+
+function showLevelUpNotification(level, levelName) {
+  const notification = document.createElement('div');
+  notification.className = 'level-up-notification';
+  notification.innerHTML = `
+    <div class="level-up-content">
+      <div class="level-up-icon">🎉</div>
+      <div class="level-up-text">
+        <div class="level-up-title">等级提升！</div>
+        <div class="level-up-level">Lv.${level} ${levelName}</div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(notification);
+  
+  setTimeout(() => {
+    notification.classList.add('show');
+  }, 100);
+  
+  setTimeout(() => {
+    notification.classList.remove('show');
+    setTimeout(() => notification.remove(), 500);
+  }, 3000);
 }
 
 // ========== 语音 ==========

@@ -5,6 +5,10 @@ import { fileURLToPath } from "node:url";
 import type { Config } from "./config.js";
 import { listAgents, routeAgent, runAgent, initAgentBus, agentEvents, startHeartbeat, getReminders, getAgentRuntimeStates, createAgentDefinition } from "./agent.js";
 import { initMemory, getMessageCount, searchMemory, getRecentMessages, getHistoryForSession, getMergedHistory, getUserFacts, getUserFactCount, getMessagesSince, saveUserFact, saveMessage } from "./memory.js";
+import { initGamification, addXP, trackMessage, trackFact, trackToolUse, getProgress, getAllAchievements, getAllLevels, unlockAchievement } from "./gamification.js";
+import { initVectorMemory, addVectorMemory, searchVectorMemory, getVectorMemoryStats, importExistingMemories } from "./vector.js";
+import { handleWebSocketUpgrade, pushEvent, getWSStats } from "./websocket.js";
+import { initOmeLand, upsertAgentProfile, createPost, followAgent, likePost, getFeed, getAgentProfile, getAllAgents, getAgentPosts, matchAgents, getOmeLandStats } from "./omeland.js";
 import { bus } from "./bus.js";
 import { listTools } from "./tools.js";
 import { createLarkAdapter } from "./gateway/lark.js";
@@ -57,13 +61,71 @@ function collectBody(req: IncomingMessage): Promise<string> {
 export function startServer(config: Config, port: number, configPath?: string) {
   const dataDir = resolve(process.cwd(), config.memory?.dataDir ?? ".omeclaw");
   initMemory(dataDir);
+  initGamification(dataDir);
+  initVectorMemory(dataDir);
+  initOmeLand(dataDir);
   initAgentBus(config);
+  
+  // 导入现有记忆到向量系统
+  setTimeout(() => {
+    const messages = getRecentMessages(1000);
+    const facts = getUserFacts();
+    const imported = importExistingMemories(messages, facts);
+    console.log(`[vector] Imported ${imported} existing memories`);
+    
+    // 自动创建主 Agent 档案
+    const orchAgent = Object.entries(config.agents).find(([_, a]) => a.role === "orchestrator");
+    if (orchAgent) {
+      const [agentId, agentConfig] = orchAgent;
+      const userFacts = getUserFacts();
+      const mbti = userFacts.find(f => f.key === "MBTI")?.value;
+      const traits = userFacts.find(f => f.key === "性格特质")?.value?.split("、") || [];
+      const interests = userFacts.find(f => f.key === "兴趣爱好")?.value?.split("、") || [];
+      
+      upsertAgentProfile({
+        id: agentId,
+        name: agentConfig.name,
+        avatar: "🪼",
+        bio: agentConfig.systemPrompt?.slice(0, 100) || "你的 AI 分身",
+        personality: {
+          mbti,
+          traits,
+          interests,
+        },
+      });
+      console.log(`[omeland] Created profile for ${agentConfig.name}`);
+    }
+  }, 2000);
 
   agentEvents.on("tool_call", (d: any) => {
     logActivity("tool", d.agentId, `🔧 ${d.tool}(${JSON.stringify(d.args).slice(0, 80)})`);
+    trackToolUse(d.tool);
+    
+    // 实时推送工具调用事件
+    pushEvent({
+      type: "tool_call",
+      data: { agentId: d.agentId, tool: d.tool, args: d.args },
+      sessionId: OWNER_SESSION,
+    });
+    
     if (d.tool === "remember_about_user") {
       logActivity("memory", d.agentId, `🧠 记忆写入: ${d.args?.key} = ${d.args?.value}`.slice(0, 120));
       logEvolution("memory", `记忆生长 · ${d.args?.key}`, "🧠");
+      trackFact(getUserFactCount());
+      addXP(5, "fact_created");
+      // 添加到向量记忆
+      addVectorMemory(`${d.args?.key}: ${d.args?.value}`, "fact", {
+        key: d.args?.key,
+        value: d.args?.value,
+        agentId: d.agentId,
+      });
+      
+      // 实时推送记忆更新
+      pushEvent({
+        type: "memory_update",
+        data: { key: d.args?.key, value: d.args?.value, factCount: getUserFactCount() },
+        sessionId: OWNER_SESSION,
+      });
     }
   });
   agentEvents.on("tool_result", (d: any) => logActivity("tool_result", d.agentId, `✅ ${d.tool} → ${d.result.slice(0, 100)}`));
@@ -434,6 +496,198 @@ export function startServer(config: Config, port: number, configPath?: string) {
       return json(res, { reminders: getReminders() });
     }
 
+    // 游戏化系统 API
+    if (url === "/api/progress" && method === "GET") {
+      return json(res, getProgress());
+    }
+
+    if (url === "/api/achievements" && method === "GET") {
+      return json(res, { achievements: getAllAchievements() });
+    }
+
+    if (url === "/api/levels" && method === "GET") {
+      return json(res, { levels: getAllLevels() });
+    }
+
+    // 向量记忆搜索 API
+    if (url.startsWith("/api/vector/search") && method === "GET") {
+      const params = new URL(fullUrl, "http://localhost").searchParams;
+      const query = params.get("q") || "";
+      const type = params.get("type") as "message" | "fact" | "event" | undefined;
+      const limit = parseInt(params.get("limit") || "10");
+      
+      if (!query) return json(res, { error: "query required" }, 400);
+      
+      const results = searchVectorMemory(query, { limit, type, minSimilarity: 0.3 });
+      return json(res, {
+        query,
+        results: results.map(r => ({
+          text: r.memory.text,
+          similarity: r.similarity,
+          type: r.memory.metadata.type,
+          timestamp: r.memory.metadata.timestamp,
+        })),
+      });
+    }
+
+    if (url === "/api/vector/stats" && method === "GET") {
+      return json(res, getVectorMemoryStats());
+    }
+
+    // WebSocket 统计
+    if (url === "/api/ws/stats" && method === "GET") {
+      return json(res, getWSStats());
+    }
+
+    // OmeLand API
+    if (url === "/api/omeland/agents" && method === "GET") {
+      return json(res, { agents: getAllAgents() });
+    }
+
+    if (url.startsWith("/api/omeland/agent/") && method === "GET") {
+      const agentId = url.split("/").pop();
+      if (!agentId) return json(res, { error: "agentId required" }, 400);
+      const profile = getAgentProfile(agentId);
+      if (!profile) return json(res, { error: "agent not found" }, 404);
+      const posts = getAgentPosts(agentId, 20);
+      return json(res, { profile, posts });
+    }
+
+    if (url === "/api/omeland/feed" && method === "GET") {
+      const params = new URL(fullUrl, "http://localhost").searchParams;
+      const agentId = params.get("agentId") || "owner";
+      const limit = parseInt(params.get("limit") || "20");
+      const offset = parseInt(params.get("offset") || "0");
+      const feed = getFeed(agentId, { limit, offset });
+      return json(res, { feed });
+    }
+
+    if (url === "/api/omeland/post" && method === "POST") {
+      try {
+        const body = JSON.parse(await collectBody(req));
+        const { agentId, content, type, tags, visibility } = body;
+        if (!agentId || !content) return json(res, { error: "agentId and content required" }, 400);
+        const post = createPost(agentId, content, type, { tags, visibility });
+        
+        // 推送新帖子事件
+        pushEvent({
+          type: "new_post",
+          data: post,
+        });
+        
+        return json(res, { ok: true, post });
+      } catch (e: any) {
+        return json(res, { error: e.message }, 500);
+      }
+    }
+
+    if (url === "/api/omeland/follow" && method === "POST") {
+      try {
+        const body = JSON.parse(await collectBody(req));
+        const { fromAgentId, toAgentId } = body;
+        if (!fromAgentId || !toAgentId) return json(res, { error: "fromAgentId and toAgentId required" }, 400);
+        const success = followAgent(fromAgentId, toAgentId);
+        return json(res, { ok: success });
+      } catch (e: any) {
+        return json(res, { error: e.message }, 500);
+      }
+    }
+
+    if (url === "/api/omeland/like" && method === "POST") {
+      try {
+        const body = JSON.parse(await collectBody(req));
+        const { agentId, postId } = body;
+        if (!agentId || !postId) return json(res, { error: "agentId and postId required" }, 400);
+        const success = likePost(agentId, postId);
+        return json(res, { ok: success });
+      } catch (e: any) {
+        return json(res, { error: e.message }, 500);
+      }
+    }
+
+    if (url === "/api/omeland/match" && method === "GET") {
+      const params = new URL(fullUrl, "http://localhost").searchParams;
+      const agentId = params.get("agentId") || "owner";
+      const limit = parseInt(params.get("limit") || "10");
+      const matches = matchAgents(agentId, limit);
+      return json(res, { matches });
+    }
+
+    if (url === "/api/omeland/stats" && method === "GET") {
+      return json(res, getOmeLandStats());
+    }
+
+    // 60秒魔法引导系统
+    if (url === "/api/onboarding" && method === "POST") {
+      try {
+        const body = JSON.parse(await collectBody(req));
+        const { callMe, personality, interests, goals, relationship } = body;
+        
+        let factsCreated = 0;
+        
+        // 保存用户称呼
+        if (callMe) {
+          saveUserFact(OWNER_SESSION, "称呼用户为", callMe);
+          factsCreated++;
+        }
+        
+        // 保存性格标签
+        if (personality && personality.length > 0) {
+          saveUserFact(OWNER_SESSION, "性格特质", personality.join("、"));
+          factsCreated++;
+        }
+        
+        // 保存兴趣爱好
+        if (interests && interests.length > 0) {
+          saveUserFact(OWNER_SESSION, "兴趣爱好", interests.join("、"));
+          factsCreated++;
+        }
+        
+        // 保存目标期望
+        if (goals && goals.length > 0) {
+          saveUserFact(OWNER_SESSION, "期望帮助", goals.join("、"));
+          factsCreated++;
+        }
+        
+        // 保存关系定义
+        if (relationship) {
+          const relationshipMap: Record<string, string> = {
+            friend: "朋友",
+            assistant: "助手",
+            companion: "伙伴",
+            mentor: "导师"
+          };
+          saveUserFact(OWNER_SESSION, "关系定义", relationshipMap[relationship] || "朋友");
+          factsCreated++;
+        }
+        
+        // 更新游戏化系统
+        trackFact(getUserFactCount());
+        addXP(factsCreated * 10, "onboarding");
+        
+        // 解锁首次成就
+        unlockAchievement("first_fact");
+        if (factsCreated >= 5) unlockAchievement("fact_10");
+        
+        const progress = getProgress();
+        
+        logActivity("system", "onboarding", `🎉 引导完成: ${callMe} · ${factsCreated} 条记忆`);
+        logEvolution("onboarding", `新用户引导完成 · ${callMe}`, "🎉");
+        
+        return json(res, { 
+          ok: true, 
+          factsCreated, 
+          bondLevel: progress.levelName,
+          xpGained: factsCreated * 10,
+          totalFacts: getUserFactCount(),
+          level: progress.level,
+          achievements: progress.achievements.length
+        });
+      } catch (e: any) { 
+        return json(res, { error: e.message }, 500); 
+      }
+    }
+
     // 数据导入：批量文本提取用户画像
     if (url === "/api/import" && method === "POST") {
       try {
@@ -519,9 +773,43 @@ export function startServer(config: Config, port: number, configPath?: string) {
         }
 
         logActivity("user_in", agentId, msg.slice(0, 120), "web", OWNER_SESSION);
+        trackMessage(agentId);
+        
+        // 添加用户消息到向量记忆
+        addVectorMemory(msg, "message", {
+          sessionId: OWNER_SESSION,
+          agentId,
+        });
+        
         const reply = await runAgent(config, OWNER_SESSION, agentId, cleanText);
         logActivity("agent_out", agentId, reply.slice(0, 150), "web", OWNER_SESSION);
-        return json(res, { reply, agentId });
+        
+        // 添加 AI 回复到向量记忆
+        addVectorMemory(reply, "message", {
+          sessionId: OWNER_SESSION,
+          agentId,
+        });
+        
+        // 实时推送新消息
+        pushEvent({
+          type: "new_message",
+          data: { role: "assistant", content: reply, agentId },
+          sessionId: OWNER_SESSION,
+        });
+        
+        // 检查是否升级
+        const progress = getProgress();
+        
+        // 推送进度更新
+        if (progress) {
+          pushEvent({
+            type: "progress_update",
+            data: progress,
+            sessionId: OWNER_SESSION,
+          });
+        }
+        
+        return json(res, { reply, agentId, progress });
       } catch (e: any) { return json(res, { error: e.message }, 500); }
     }
 
@@ -541,10 +829,11 @@ export function startServer(config: Config, port: number, configPath?: string) {
   logEvolution("start", "分身系统苏醒", "🪼");
 
   server.listen(port, () => {
-    console.log(`\n  🪼 OmeClaw v0.6.0 — Agent Operating System`);
+    console.log(`\n  🪼 OmeClaw v0.8.3 — Agent Operating System`);
     console.log(`  ──────────────────────────────────────────`);
     console.log(`  📊 Dashboard:   http://localhost:${port}`);
     console.log(`  🔌 API:         http://localhost:${port}/api/status`);
+    console.log(`  🔄 WebSocket:   ws://localhost:${port}/ws`);
     for (const gw of allGateways()) console.log(`  💬 ${gw.name}:${" ".repeat(10 - gw.name.length)}http://localhost:${port}/webhook/${gw.name}`);
     console.log(`  🤖 Agents:      ${listAgents(config).map(a => `${a.name}[${a.role}]`).join(", ")}`);
     console.log(`  🧰 Tools:       ${listTools().map(t => t.name).join(", ")}`);
@@ -552,5 +841,15 @@ export function startServer(config: Config, port: number, configPath?: string) {
     console.log(`  💾 Memory:      ${dataDir}`);
     console.log();
   });
+
+  // WebSocket 升级处理
+  server.on("upgrade", (req, socket, head) => {
+    if (req.url?.startsWith("/ws")) {
+      handleWebSocketUpgrade(req, socket, head);
+    } else {
+      socket.end();
+    }
+  });
+
   return server;
 }
